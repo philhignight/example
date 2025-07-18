@@ -7674,6 +7674,48 @@ public class ExampleFrameworkRetryMechanismTest {
     }
 }====================
 
+File: ./todo-record-job/src/test/java/mil/osd/myorg/todoapp/helper/BatchReportingApiKeyFtype1ory.java
+====================
+package com.example.todoapp.helper;
+
+import java.io.File;
+import java.lang.reflect.Constructor;
+
+import com.example.deers.batchreporting.api.BatchReportingApiKey;
+
+/**
+ * Ftype1ory for creating BatchReportingApiKey instances using reflection.
+ * This is needed because the BatchReportingApiKey constructor has package-private access.
+ */
+public class BatchReportingApiKeyFtype1ory {
+    
+    /**
+     * Create a BatchReportingApiKey instance using reflection to access the package-private constructor.
+     * 
+     * @param appId Application ID
+     * @param dbfBatchId DBF Batch ID
+     * @param outputDirectory Output directory for BATCHREPORTING files
+     * @return BatchReportingApiKey instance
+     * @throws RuntimeException if reflection fails
+     */
+    public static BatchReportingApiKey createBatchReportingApiKey(int appId, long dbfBatchId, File outputDirectory) {
+        try {
+            // Get the package-private constructor
+            Constructor<BatchReportingApiKey> constructor = BatchReportingApiKey.class.getDeclaredConstructor(
+                int.class, long.class, File.class);
+            
+            // Make it accessible
+            constructor.setAccessible(true);
+            
+            // Create and return the instance
+            return constructor.newInstance(appId, dbfBatchId, outputDirectory);
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create BatchReportingApiKey instance using reflection", e);
+        }
+    }
+}====================
+
 File: ./todo-record-job/src/test/java/mil/osd/myorg/todoapp/helper/ExampleFrameworkMockHelper.java
 ====================
 package com.example.todoapp.helper;
@@ -7849,6 +7891,7 @@ import java.io.File;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import com.example.todoapp.Constants;
 import com.example.todoapp.batchreporting.BatchReportingAdapter;
+import com.example.todoapp.helper.BatchReportingApiKeyFtype1ory;
 import com.example.todoapp.model.ExampleFrameworkResponseData;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.model.jsonl.JsonlProcessorType1ion;
@@ -7884,10 +7927,10 @@ public class BatchReportingPhaseProcessorTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         
-        // Create BatchReportingApiKey with the required constructor parameters
+        // Create BatchReportingApiKey using reflection ftype1ory
         // Parameters: int appId, long dbfBatchId, File outputDirectory
         when(mockIdGenerator.generateFakeDbfBatchId()).thenReturn(230115143045L);
-        batchreportingApiKey = new BatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output"));
+        batchreportingApiKey = BatchReportingApiKeyFtype1ory.createBatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output"));
         
         processor = new BatchReportingPhaseProcessor(
             mockBatchReportingAdapter,
@@ -8508,6 +8551,7 @@ import org.mockito.MockitoAnnotations;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import com.example.todoapp.Constants;
 import java.io.File;
+import com.example.todoapp.helper.BatchReportingApiKeyFtype1ory;
 import com.example.todoapp.BatchJobReport;
 import com.example.todoapp.RecordValidator;
 import com.example.todoapp.StopException;
@@ -8557,7 +8601,7 @@ public class ProcessingCoordinatorTest {
     @Mock
     private BatchJobReport mockComReport;
     
-    private BatchReportingApiKey batchreportingApiKey = new BatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")); // Use proper constructor
+    private BatchReportingApiKey batchreportingApiKey = BatchReportingApiKeyFtype1ory.createBatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")); // Use ftype1ory method
     
     private ProcessingCoordinator coordinator;
     
@@ -8968,6 +9012,7 @@ import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
 import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import java.io.File;
+import com.example.todoapp.helper.BatchReportingApiKeyFtype1ory;
 import com.example.todoapp.BatchJobReport;
 import com.example.todoapp.Constants;
 import com.example.todoapp.RecordValidator;
@@ -9195,7 +9240,7 @@ public class RecordProcessorEnhancedTest {
     @Test
     public void testProcessRecords_WithBatchReportingApi() throws Exception {
         // Arrange
-        BatchReportingApiKey batchreportingApiKey = new BatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output"));
+        BatchReportingApiKey batchreportingApiKey = BatchReportingApiKeyFtype1ory.createBatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output"));
         TodoUpdateRecord record = createTestRecord("123456789", "S", "987654321", "S", "SMITH");
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
@@ -9380,6 +9425,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import com.example.todoapp.Constants;
 import java.io.File;
+import com.example.todoapp.helper.BatchReportingApiKeyFtype1ory;
 import com.example.todoapp.BatchJobReport;
 import com.example.todoapp.RecordValidator;
 import com.example.todoapp.StopException;
@@ -9442,7 +9488,7 @@ public class RecordProcessorTestFixed {
         BatchJobReport successReport = createTestComReport();
         RecordProcessor.ProcessingResult result = recordProcessor.processRecords(
             records,
-            new BatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")),
+            BatchReportingApiKeyFtype1ory.createBatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")),
             "/tmp/stop.file",
             "TEST_NOTIFICATION",
             "12345",
@@ -9475,7 +9521,7 @@ public class RecordProcessorTestFixed {
         assertThrows(StopException.class, () -> {
             recordProcessor.processRecords(
                 records,
-                new BatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")),
+                BatchReportingApiKeyFtype1ory.createBatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")),
                 "/tmp/stop.file",
                 "TEST_NOTIFICATION",
                 "12345",
@@ -9530,6 +9576,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import com.example.todoapp.Constants;
 import java.io.File;
+import com.example.todoapp.helper.BatchReportingApiKeyFtype1ory;
 import com.example.todoapp.BatchJobReport;
 import com.example.todoapp.RecordValidator;
 import com.example.todoapp.StopException;
@@ -9565,7 +9612,7 @@ public class RecordProcessorTest {
     @Mock
     private IdGenerator mockIdGenerator;
     
-    private BatchReportingApiKey batchreportingApiKey = new BatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")); // Use proper constructor
+    private BatchReportingApiKey batchreportingApiKey = BatchReportingApiKeyFtype1ory.createBatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")); // Use ftype1ory method
     
     @Mock
     private ExchangeMessage mockExampleFrameworkResponse;
@@ -9819,6 +9866,7 @@ import org.mockito.MockitoAnnotations;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import com.example.todoapp.Constants;
 import java.io.File;
+import com.example.todoapp.helper.BatchReportingApiKeyFtype1ory;
 import com.example.todoapp.BatchJobReport;
 import com.example.todoapp.RecordValidator;
 import com.example.todoapp.StopException;
@@ -9855,7 +9903,7 @@ public class Reftype1oredRecordProcessorTest {
     @Mock
     private BatchJobReport mockComReport;
     
-    private BatchReportingApiKey batchreportingApiKey = new BatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")); // Use proper constructor
+    private BatchReportingApiKey batchreportingApiKey = BatchReportingApiKeyFtype1ory.createBatchReportingApiKey(Constants.APP_ID, 230115143045L, new File("/tmp/batchreporting/output")); // Use ftype1ory method
     
     private RecordProcessor processor;
     
