@@ -7605,8 +7605,8 @@ public class ExampleFrameworkRetryMechanismTest {
         String stopFilePath = "/tmp/stop.file";
         
         // Mock non-transient error
-        StatusDetailException nonTransientError = new StatusDetailException("Non-transient error", null, null);
-        nonTransientError.setResponse(mockResponse);
+        StatusDetailException nonTransientError = mock(StatusDetailException.class);
+        when(nonTransientError.getResponse()).thenReturn(mockResponse);
         when(mockExampleFrameworkClient.processInstructionWithRetries(anyString()))
             .thenThrow(nonTransientError);
         
