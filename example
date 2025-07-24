@@ -6403,10 +6403,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.example.todoapp.config.TodoUpdBatchConfiguration;
-import com.example.todoapp.processor.ServiceProvider;
 import com.example.sftplib.service.SftpService;
 import com.example.sftplib.SftpConnection;
-import com.example.sftplib.SftpException;
 
 /**
  * Service that checks for a dangerous delete flag file at startup and clears all local directories if found.
@@ -6552,10 +6550,10 @@ public class StartupCleanupService {
     
     /**
      * Check for the dangerous delete remote files flag and perform cleanup if found.
-     * @param serviceProvider the service provider for accessing SFTP service
+     * @param sftpService the SFTP service to use for remote operations
      * @return true if cleanup was performed, false otherwise
      */
-    public boolean checkAndPerformRemoteCleanup(ServiceProvider serviceProvider) {
+    public boolean checkAndPerformRemoteCleanup(SftpService sftpService) {
         // Check multiple locations for the flag file
         List<File> flagLocations = new ArrayList<>();
         
@@ -6594,12 +6592,10 @@ public class StartupCleanupService {
         LOGGER.warn("-----------------------------------------------");
         
         boolean cleanupSuccessful = true;
-        
-        // Get SFTP service
-        SftpService sftpService = serviceProvider.getSftpService();
         SftpConnection connection = null;
         
         try {
+            // Get SFTP connection only after confirming we need to do cleanup
             connection = sftpService.getConnection();
             
             // Clean up remote directories based on configuration
@@ -6635,12 +6631,17 @@ public class StartupCleanupService {
                 }
             }
             
-        } catch (SftpException e) {
-            LOGGER.error("Failed to establish SFTP connection for remote cleanup", e);
+        } catch (Exception e) {
+            LOGGER.error("Error during remote cleanup", e);
             cleanupSuccessful = false;
         } finally {
+            // Release connection if we created one
             if (connection != null) {
-                sftpService.releaseConnection(connection);
+                try {
+                    sftpService.releaseConnection(connection);
+                } catch (Exception e) {
+                    LOGGER.error("Error releasing SFTP connection", e);
+                }
             }
         }
         
@@ -6701,7 +6702,7 @@ public class StartupCleanupService {
                         // Not a directory, proceed with deletion
                     }
                     
-                    sftpService.deleteFile(fullPath);
+                    sftpService.delete(connection, fullPath);
                     LOGGER.debug("Deleted remote file: {}", fullPath);
                 } catch (Exception e) {
                     LOGGER.error("Failed to delete remote file: {}", fullPath, e);
@@ -6831,7 +6832,7 @@ public final class TodoUpdBatchApplication {
             }
             
             // Check for remote cleanup flag
-            if (cleanupService.checkAndPerformRemoteCleanup(serviceProvider)) {
+            if (cleanupService.checkAndPerformRemoteCleanup(serviceProvider.getSftpService())) {
                 LOGGER.warn("Remote cleanup was performed. All remote files have been cleared.");
             }
         } catch (Exception e) {
