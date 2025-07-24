@@ -1987,6 +1987,15 @@ public class BatchReportingPhaseProcessor {
         
         LOGGER.info("Starting BATCHREPORTING phase processing from line {}", startingLine);
         
+        // Check if EXAMPLE_FRAMEWORK response file exists first
+        if (!responseFileService.exampleframeworkResponseFileExists(todoFile, todoFilePrefix)) {
+            LOGGER.warn("EXAMPLE_FRAMEWORK response file does not exist for submission {} with prefix {}. " +
+                "This may indicate that BATCHREPORTING processing was already completed and the file was cleaned up, " +
+                "or that EXAMPLE_FRAMEWORK processing was never performed.", todoFile, todoFilePrefix);
+            // Return early - no BATCHREPORTING processing to do
+            return;
+        }
+        
         // Read all EXAMPLE_FRAMEWORK responses
         List<ExampleFrameworkResponseData> responses = responseFileService.readAllExampleFrameworkResponses(
             todoFile, todoFilePrefix);
@@ -5486,6 +5495,15 @@ public class ExampleFrameworkResponseFileService {
             throws IOException {
         String filePath = getExampleFrameworkResponseFilePath(todoFile, todoFilePrefix);
         
+        // Ensure output directory exists
+        File outputDirFile = new File(outputDir);
+        if (!outputDirFile.exists()) {
+            if (!outputDirFile.mkdirs()) {
+                throw new IOException("Failed to create output directory: " + outputDir);
+            }
+            LOGGER.info("Created output directory: {}", outputDir);
+        }
+        
         // Append to file (create if doesn't exist)
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath, true))) {
             String json = objectMapper.writeValueAsString(response);
@@ -5513,8 +5531,13 @@ public class ExampleFrameworkResponseFileService {
         File file = new File(filePath);
         
         if (!file.exists()) {
-            LOGGER.error("EXAMPLE_FRAMEWORK response file not found: {}", filePath);
-            throw new FileNotFoundException("EXAMPLE_FRAMEWORK response file not found: " + filePath);
+            LOGGER.error("EXAMPLE_FRAMEWORK response file not found: {}. This can happen if: " +
+                "1) The EXAMPLE_FRAMEWORK phase was skipped or failed, " +
+                "2) The file was already processed and deleted in a previous run, " +
+                "3) Recovery is attempting to resume BATCHREPORTING processing but the intermediate file is missing", 
+                filePath);
+            throw new FileNotFoundException("EXAMPLE_FRAMEWORK response file not found: " + filePath + 
+                ". The file may have been deleted after successful processing or was never created.");
         }
         
         LOGGER.debug("Reading EXAMPLE_FRAMEWORK responses from: {} (size: {} bytes)", 
