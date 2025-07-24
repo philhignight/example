@@ -11595,6 +11595,29 @@ public class BatchReportingPhaseProcessorTest {
     }
     
     @Test
+    void testProcessBatchReportingPhase_FileDoesNotExist() throws IOException {
+        // Given
+        String todoFile = "12345";
+        String todoFilePrefix = "TODOUPDATE";
+        
+        when(mockResponseFileService.exampleframeworkResponseFileExists(todoFile, todoFilePrefix))
+            .thenReturn(false);
+        
+        // When
+        BatchReportingPhaseProcessor.BatchReportingPhaseResult result = processor.processBatchReportingPhase(
+            todoFile, todoFilePrefix, batchreportingApiKey, mockBookmarkService, 0
+        );
+        
+        // Then
+        assertEquals(0, result.getRecordsProcessed());
+        assertEquals(0, result.getBatchReportingUpdatesCompleted());
+        
+        // Verify no BATCHREPORTING operations were performed
+        verifyNoIntertype1ions(mockBatchReportingAdapter);
+        verify(mockResponseFileService, never()).readAllExampleFrameworkResponses(anyString(), anyString());
+    }
+    
+    @Test
     void testProcessBatchReportingPhase_Success() throws IOException {
         // Given
         String todoFile = "12345";
@@ -11603,6 +11626,8 @@ public class BatchReportingPhaseProcessorTest {
         ExampleFrameworkResponseData response1 = createSuccessfulExampleFrameworkResponse("123456789", "987654321", 1);
         ExampleFrameworkResponseData response2 = createSuccessfulExampleFrameworkResponse("111111111", "222222222", 2);
         
+        when(mockResponseFileService.exampleframeworkResponseFileExists(todoFile, todoFilePrefix))
+            .thenReturn(true);
         when(mockResponseFileService.readAllExampleFrameworkResponses(todoFile, todoFilePrefix))
             .thenReturn(Arrays.asList(response1, response2));
         
@@ -11631,6 +11656,8 @@ public class BatchReportingPhaseProcessorTest {
         String todoFile = "12345";
         ExampleFrameworkResponseData errorResponse = createErrorExampleFrameworkResponse("123456789", "987654321", 1, "2", "356");
         
+        when(mockResponseFileService.exampleframeworkResponseFileExists(todoFile, "TODOUPDATE"))
+            .thenReturn(true);
         when(mockResponseFileService.readAllExampleFrameworkResponses(todoFile, "TODOUPDATE"))
             .thenReturn(Arrays.asList(errorResponse));
         
@@ -11664,6 +11691,8 @@ public class BatchReportingPhaseProcessorTest {
         jsonlType1ion.setProcessorName("PROCESSOR1");
         response.setProcessorType1ions(Arrays.asList(jsonlType1ion));
         
+        when(mockResponseFileService.exampleframeworkResponseFileExists(todoFile, "TODOUPDATE"))
+            .thenReturn(true);
         when(mockResponseFileService.readAllExampleFrameworkResponses(todoFile, "TODOUPDATE"))
             .thenReturn(Arrays.asList(response));
         
@@ -11682,6 +11711,8 @@ public class BatchReportingPhaseProcessorTest {
         ExampleFrameworkResponseData response2 = createSuccessfulExampleFrameworkResponse("111111111", "222222222", 2);
         ExampleFrameworkResponseData response3 = createSuccessfulExampleFrameworkResponse("333333333", "444444444", 3);
         
+        when(mockResponseFileService.exampleframeworkResponseFileExists("12345", "TODOUPDATE"))
+            .thenReturn(true);
         when(mockResponseFileService.readAllExampleFrameworkResponses("12345", "TODOUPDATE"))
             .thenReturn(Arrays.asList(response1, response2, response3));
         
@@ -11708,6 +11739,8 @@ public class BatchReportingPhaseProcessorTest {
         ExampleFrameworkResponseData response1 = createSuccessfulExampleFrameworkResponse("123456789", "987654321", 1);
         ExampleFrameworkResponseData response2 = createSuccessfulExampleFrameworkResponse("111111111", "222222222", 2);
         
+        when(mockResponseFileService.exampleframeworkResponseFileExists("12345", "TODOUPDATE"))
+            .thenReturn(true);
         when(mockResponseFileService.readAllExampleFrameworkResponses("12345", "TODOUPDATE"))
             .thenReturn(Arrays.asList(response1, response2));
         
@@ -11732,6 +11765,8 @@ public class BatchReportingPhaseProcessorTest {
         // Given
         ExampleFrameworkResponseData response = createSuccessfulExampleFrameworkResponse("123456789", "987654321", 1);
         
+        when(mockResponseFileService.exampleframeworkResponseFileExists("12345", "TODOUPDATE"))
+            .thenReturn(true);
         when(mockResponseFileService.readAllExampleFrameworkResponses("12345", "TODOUPDATE"))
             .thenReturn(Arrays.asList(response));
         
@@ -11765,6 +11800,8 @@ public class BatchReportingPhaseProcessorTest {
         // Given
         ExampleFrameworkResponseData response = createValidationErrorResponse("123456789", "987654321", 1, "512");
         
+        when(mockResponseFileService.exampleframeworkResponseFileExists("12345", "TODOUPDATE"))
+            .thenReturn(true);
         when(mockResponseFileService.readAllExampleFrameworkResponses("12345", "TODOUPDATE"))
             .thenReturn(Arrays.asList(response));
         
@@ -15128,7 +15165,7 @@ public class RecordParserTest {
     @Test
     void testParseRecord_NullLine() {
         // When/Then - Should handle null gracefully
-        assertThrows(NullPointerException.class, () -> {
+        assertThrows(IllegalArgumentException.class, () -> {
             RecordParser.parseRecord(null, "TYPE1");
         });
     }
