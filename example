@@ -6592,11 +6592,9 @@ public class StartupCleanupService {
         LOGGER.warn("-----------------------------------------------");
         
         boolean cleanupSuccessful = true;
-        SftpConnection connection = null;
         
-        try {
-            // Get SFTP connection only after confirming we need to do cleanup
-            connection = sftpService.getConnection();
+        // Use try-with-resources to ensure connection is properly closed
+        try (SftpConnection connection = sftpService.connect()) {
             
             // Clean up remote directories based on configuration
             List<String> remoteDirectoriesToClean = new ArrayList<>();
@@ -6634,15 +6632,6 @@ public class StartupCleanupService {
         } catch (Exception e) {
             LOGGER.error("Error during remote cleanup", e);
             cleanupSuccessful = false;
-        } finally {
-            // Release connection if we created one
-            if (connection != null) {
-                try {
-                    sftpService.releaseConnection(connection);
-                } catch (Exception e) {
-                    LOGGER.error("Error releasing SFTP connection", e);
-                }
-            }
         }
         
         // Delete the flag file itself
