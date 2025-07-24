@@ -2746,11 +2746,7 @@ public class FileOperationsService {
      */
     public boolean remoteFileExists(SftpService sftpService, SftpConnection sftpConnection, 
                                    String remotePath) throws SftpException, GeneralSecurityException {
-        try {
-            return sftpService.exists(sftpConnection, remotePath);
-        } catch (IOException e) {
-            throw new SftpException("Error checking if remote file exists: " + remotePath, e);
-        }
+        return sftpService.exists(sftpConnection, remotePath);
     }
 }====================
 
@@ -6460,10 +6456,10 @@ public class StartupCleanupService {
         }
         
         // Perform the dangerous cleanup
-        LOGGER.warn("===============================================");
+        LOGGER.warn("-----------------------------------------------");
         LOGGER.warn("PERFORMING DANGEROUS CLEANUP OF ALL LOCAL FILES");
         LOGGER.warn("This will delete all files in configured local directories!");
-        LOGGER.warn("===============================================");
+        LOGGER.warn("-----------------------------------------------");
         
         boolean cleanupSuccessful = true;
         
