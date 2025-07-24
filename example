@@ -2745,7 +2745,7 @@ public class FileOperationsService {
      * Check if a remote file exists via SFTP.
      */
     public boolean remoteFileExists(SftpService sftpService, SftpConnection sftpConnection, 
-                                   String remotePath) throws SftpException, GeneralSecurityException {
+                                   String remotePath) throws SftpException, GeneralSecurityException, IOException {
         return sftpService.exists(sftpConnection, remotePath);
     }
 }====================
@@ -6403,6 +6403,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.example.todoapp.config.TodoUpdBatchConfiguration;
+import com.example.todoapp.processor.ServiceProvider;
+import com.example.sftplib.service.SftpService;
+import com.example.sftplib.SftpConnection;
+import com.example.sftplib.SftpException;
 
 /**
  * Service that checks for a dangerous delete flag file at startup and clears all local directories if found.
@@ -6412,6 +6416,7 @@ public class StartupCleanupService {
     
     private static final Logger LOGGER = LogManager.getLogger(StartupCleanupService.class);
     private static final String DANGEROUS_DELETE_FLAG_FILE = "_DANGEROUSLY_DELETE_ALL_LOCAL_FILES_";
+    private static final String DANGEROUS_DELETE_REMOTE_FLAG_FILE = "_DANGEROUSLY_DELETE_ALL_REMOTE_FILES_";
     
     private final TodoUpdBatchConfiguration config;
     
@@ -6544,6 +6549,170 @@ public class StartupCleanupService {
                 }
             });
     }
+    
+    /**
+     * Check for the dangerous delete remote files flag and perform cleanup if found.
+     * @param serviceProvider the service provider for accessing SFTP service
+     * @return true if cleanup was performed, false otherwise
+     */
+    public boolean checkAndPerformRemoteCleanup(ServiceProvider serviceProvider) {
+        // Check multiple locations for the flag file
+        List<File> flagLocations = new ArrayList<>();
+        
+        // Check in current working directory
+        flagLocations.add(new File(DANGEROUS_DELETE_REMOTE_FLAG_FILE));
+        
+        // Check in the local SFTP directory
+        if (config.getLocalSftpDir() != null) {
+            flagLocations.add(new File(config.getLocalSftpDir(), DANGEROUS_DELETE_REMOTE_FLAG_FILE));
+        }
+        
+        // Check in the output directory
+        if (config.getOutputDir() != null) {
+            flagLocations.add(new File(config.getOutputDir(), DANGEROUS_DELETE_REMOTE_FLAG_FILE));
+        }
+        
+        // Look for the flag file in any of these locations
+        File foundFlagFile = null;
+        for (File flagFile : flagLocations) {
+            if (flagFile.exists()) {
+                foundFlagFile = flagFile;
+                LOGGER.warn("DANGEROUS DELETE REMOTE FILES FLAG FOUND at: {}", flagFile.getAbsolutePath());
+                break;
+            }
+        }
+        
+        if (foundFlagFile == null) {
+            LOGGER.debug("No dangerous delete remote files flag found, proceeding normally");
+            return false;
+        }
+        
+        // Perform the dangerous remote cleanup
+        LOGGER.warn("-----------------------------------------------");
+        LOGGER.warn("PERFORMING DANGEROUS CLEANUP OF ALL REMOTE FILES");
+        LOGGER.warn("This will delete all files in configured remote directories!");
+        LOGGER.warn("-----------------------------------------------");
+        
+        boolean cleanupSuccessful = true;
+        
+        // Get SFTP service
+        SftpService sftpService = serviceProvider.getSftpService();
+        SftpConnection connection = null;
+        
+        try {
+            connection = sftpService.getConnection();
+            
+            // Clean up remote directories based on configuration
+            List<String> remoteDirectoriesToClean = new ArrayList<>();
+            
+            // TYPE1 directories
+            if (config.getType1RemoteBaseDir() != null) {
+                remoteDirectoriesToClean.add(config.getType1RemoteBaseDir() + "/incoming");
+                remoteDirectoriesToClean.add(config.getType1RemoteBaseDir() + "/input_archive");
+                remoteDirectoriesToClean.add(config.getType1RemoteBaseDir() + "/output_archive");
+            }
+            
+            // TYPE2 directories
+            if (config.getType2RemoteBaseDir() != null) {
+                remoteDirectoriesToClean.add(config.getType2RemoteBaseDir() + "/incoming");
+                remoteDirectoriesToClean.add(config.getType2RemoteBaseDir() + "/input_archive");
+                remoteDirectoriesToClean.add(config.getType2RemoteBaseDir() + "/output_archive");
+            }
+            
+            // BATCHREPORTING output directory
+            if (config.getRemoteBatchReportingOutputDirectory() != null) {
+                remoteDirectoriesToClean.add(config.getRemoteBatchReportingOutputDirectory());
+            }
+            
+            // Clean files from each remote directory
+            for (String remotePath : remoteDirectoriesToClean) {
+                try {
+                    cleanRemoteDirectory(sftpService, connection, remotePath);
+                    LOGGER.warn("Cleaned remote directory: {}", remotePath);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to clean remote directory: {}", remotePath, e);
+                    cleanupSuccessful = false;
+                }
+            }
+            
+        } catch (SftpException e) {
+            LOGGER.error("Failed to establish SFTP connection for remote cleanup", e);
+            cleanupSuccessful = false;
+        } finally {
+            if (connection != null) {
+                sftpService.releaseConnection(connection);
+            }
+        }
+        
+        // Delete the flag file itself
+        try {
+            if (foundFlagFile.delete()) {
+                LOGGER.warn("Deleted flag file: {}", foundFlagFile.getAbsolutePath());
+            } else {
+                LOGGER.error("Failed to delete flag file: {}", foundFlagFile.getAbsolutePath());
+                cleanupSuccessful = false;
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
+            cleanupSuccessful = false;
+        }
+        
+        if (cleanupSuccessful) {
+            LOGGER.warn("DANGEROUS REMOTE CLEANUP COMPLETED SUCCESSFULLY");
+        } else {
+            LOGGER.error("DANGEROUS REMOTE CLEANUP COMPLETED WITH ERRORS");
+        }
+        
+        return cleanupSuccessful;
+    }
+    
+    /**
+     * Clean all files from a remote directory (but keep the directory itself).
+     */
+    private void cleanRemoteDirectory(SftpService sftpService, SftpConnection connection, 
+                                     String remotePath) throws Exception {
+        try {
+            // List all files in the remote directory
+            List<String> files = sftpService.listFiles(connection, remotePath);
+            
+            if (files == null || files.isEmpty()) {
+                LOGGER.debug("No files found in remote directory: {}", remotePath);
+                return;
+            }
+            
+            LOGGER.info("Found {} files to delete in remote directory: {}", files.size(), remotePath);
+            
+            // Delete each file (not directories)
+            for (String file : files) {
+                // Skip directory entries
+                if (file.equals(".") || file.equals("..")) {
+                    continue;
+                }
+                
+                String fullPath = remotePath + "/" + file;
+                try {
+                    // Check if it's a directory by trying to list its contents
+                    // If it throws an exception, it's likely a file
+                    try {
+                        sftpService.listFiles(connection, fullPath);
+                        LOGGER.debug("Skipping directory: {}", fullPath);
+                        continue;
+                    } catch (Exception e) {
+                        // Not a directory, proceed with deletion
+                    }
+                    
+                    sftpService.deleteFile(fullPath);
+                    LOGGER.debug("Deleted remote file: {}", fullPath);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to delete remote file: {}", fullPath, e);
+                    throw e;
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error cleaning remote directory: {}", remotePath, e);
+            throw e;
+        }
+    }
 }====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/TodoUpdBatchApplication.java
@@ -6652,10 +6821,17 @@ public final class TodoUpdBatchApplication {
         // Validate configuration and create any missing directories
         ConfigurationValidator.validateConfiguration(serviceProvider.getConfig(), serviceProvider.getFileSystemProvider());
         
-        // Check for dangerous delete flag file and perform cleanup if needed
+        // Check for dangerous delete flag files and perform cleanup if needed
         StartupCleanupService cleanupService = new StartupCleanupService(serviceProvider.getConfig());
+        
+        // Check for local cleanup flag
         if (cleanupService.checkAndPerformCleanup()) {
             LOGGER.warn("Startup cleanup was performed. All local directories have been cleared.");
+        }
+        
+        // Check for remote cleanup flag
+        if (cleanupService.checkAndPerformRemoteCleanup(serviceProvider)) {
+            LOGGER.warn("Remote cleanup was performed. All remote files have been cleared.");
         }
             
         // Audit application start
