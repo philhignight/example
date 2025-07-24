@@ -1994,7 +1994,7 @@ public class BatchReportingPhaseProcessor {
                 "This may indicate that BATCHREPORTING processing was already completed and the file was cleaned up, " +
                 "or that EXAMPLE_FRAMEWORK processing was never performed.", todoFile, todoFilePrefix);
             // Return early - no BATCHREPORTING processing to do
-            return;
+            return new BatchReportingPhaseResult(0, 0);
         }
         
         // Read all EXAMPLE_FRAMEWORK responses
@@ -6386,6 +6386,166 @@ public class TodoUpdBatchService {
     }
 }====================
 
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/service/StartupCleanupService.java
+====================
+package com.example.todoapp.service;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Comparator;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.example.todoapp.config.TodoUpdBatchConfiguration;
+
+/**
+ * Service that checks for a dangerous delete flag file at startup and clears all local directories if found.
+ * This is a dangerous operation and should only be used in development or emergency situations.
+ */
+public class StartupCleanupService {
+    
+    private static final Logger LOGGER = LogManager.getLogger(StartupCleanupService.class);
+    private static final String DANGEROUS_DELETE_FLAG_FILE = "_DANGEROUSLY_DELETE_ALL_LOCAL_FILES_";
+    
+    private final TodoUpdBatchConfiguration config;
+    
+    public StartupCleanupService(TodoUpdBatchConfiguration config) {
+        this.config = config;
+    }
+    
+    /**
+     * Check for the dangerous delete flag file and perform cleanup if found.
+     * @return true if cleanup was performed, false otherwise
+     */
+    public boolean checkAndPerformCleanup() {
+        // Check multiple locations for the flag file
+        List<File> flagLocations = new ArrayList<>();
+        
+        // Check in current working directory
+        flagLocations.add(new File(DANGEROUS_DELETE_FLAG_FILE));
+        
+        // Check in the local SFTP directory
+        if (config.getLocalSftpDir() != null) {
+            flagLocations.add(new File(config.getLocalSftpDir(), DANGEROUS_DELETE_FLAG_FILE));
+        }
+        
+        // Check in the output directory
+        if (config.getOutputDir() != null) {
+            flagLocations.add(new File(config.getOutputDir(), DANGEROUS_DELETE_FLAG_FILE));
+        }
+        
+        // Look for the flag file in any of these locations
+        File foundFlagFile = null;
+        for (File flagFile : flagLocations) {
+            if (flagFile.exists()) {
+                foundFlagFile = flagFile;
+                LOGGER.warn("DANGEROUS DELETE FLAG FILE FOUND at: {}", flagFile.getAbsolutePath());
+                break;
+            }
+        }
+        
+        if (foundFlagFile == null) {
+            LOGGER.debug("No dangerous delete flag file found, proceeding normally");
+            return false;
+        }
+        
+        // Perform the dangerous cleanup
+        LOGGER.warn("===============================================");
+        LOGGER.warn("PERFORMING DANGEROUS CLEANUP OF ALL LOCAL FILES");
+        LOGGER.warn("This will delete all files in configured local directories!");
+        LOGGER.warn("===============================================");
+        
+        boolean cleanupSuccessful = true;
+        
+        // Clean up each configured directory
+        List<String> directoriesToClean = new ArrayList<>();
+        
+        if (config.getLocalSftpDir() != null) {
+            directoriesToClean.add(config.getLocalSftpDir());
+        }
+        if (config.getOutputDir() != null) {
+            directoriesToClean.add(config.getOutputDir());
+        }
+        if (config.getBookmarkDir() != null) {
+            directoriesToClean.add(config.getBookmarkDir());
+        }
+        if (config.getTodoFileFilesDir() != null) {
+            directoriesToClean.add(config.getTodoFileFilesDir());
+        }
+        if (config.getBatchReportingApiOutputDirectory() != null && config.isEnableBatchReportingApi()) {
+            directoriesToClean.add(config.getBatchReportingApiOutputDirectory());
+        }
+        
+        for (String dirPath : directoriesToClean) {
+            try {
+                cleanDirectory(dirPath);
+                LOGGER.warn("Cleaned directory: {}", dirPath);
+            } catch (IOException e) {
+                LOGGER.error("Failed to clean directory: {}", dirPath, e);
+                cleanupSuccessful = false;
+            }
+        }
+        
+        // Delete the flag file itself
+        try {
+            if (foundFlagFile.delete()) {
+                LOGGER.warn("Deleted flag file: {}", foundFlagFile.getAbsolutePath());
+            } else {
+                LOGGER.error("Failed to delete flag file: {}", foundFlagFile.getAbsolutePath());
+                cleanupSuccessful = false;
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
+            cleanupSuccessful = false;
+        }
+        
+        if (cleanupSuccessful) {
+            LOGGER.warn("DANGEROUS CLEANUP COMPLETED SUCCESSFULLY");
+        } else {
+            LOGGER.error("DANGEROUS CLEANUP COMPLETED WITH ERRORS");
+        }
+        
+        return cleanupSuccessful;
+    }
+    
+    /**
+     * Clean all files from a directory (but keep the directory itself).
+     */
+    private void cleanDirectory(String dirPath) throws IOException {
+        Path directory = Paths.get(dirPath);
+        
+        if (!Files.exists(directory)) {
+            LOGGER.debug("Directory does not exist, nothing to clean: {}", dirPath);
+            return;
+        }
+        
+        if (!Files.isDirectory(directory)) {
+            LOGGER.warn("Path is not a directory, skipping: {}", dirPath);
+            return;
+        }
+        
+        // Delete all files and subdirectories recursively
+        Files.walk(directory)
+            .sorted(Comparator.reverseOrder()) // Delete files before directories
+            .forEach(path -> {
+                if (!path.equals(directory)) { // Don't delete the directory itself
+                    try {
+                        Files.delete(path);
+                        LOGGER.debug("Deleted: {}", path);
+                    } catch (IOException e) {
+                        LOGGER.error("Failed to delete: {}", path, e);
+                    }
+                }
+            });
+    }
+}====================
+
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/TodoUpdBatchApplication.java
 ====================
 package com.example.todoapp;
@@ -6403,6 +6563,7 @@ import com.example.todoapp.processor.ServiceProvider;
 import com.example.todoapp.processor.TodoUpdBatchProcessor;
 import com.example.todoapp.provider.PackageInfoProvider;
 import com.example.todoapp.service.AuditService;
+import com.example.todoapp.service.StartupCleanupService;
 import com.example.todoapp.util.Utils;
 
 /**
@@ -6490,6 +6651,12 @@ public final class TodoUpdBatchApplication {
             
         // Validate configuration and create any missing directories
         ConfigurationValidator.validateConfiguration(serviceProvider.getConfig(), serviceProvider.getFileSystemProvider());
+        
+        // Check for dangerous delete flag file and perform cleanup if needed
+        StartupCleanupService cleanupService = new StartupCleanupService(serviceProvider.getConfig());
+        if (cleanupService.checkAndPerformCleanup()) {
+            LOGGER.warn("Startup cleanup was performed. All local directories have been cleared.");
+        }
             
         // Audit application start
         AuditService auditService = serviceProvider.getAuditService();
@@ -15171,7 +15338,6 @@ import com.example.todoapp.BatchJobReport;
 import com.example.todoapp.Constants;
 import com.example.todoapp.RecordValidator;
 import com.example.todoapp.StopException;
-import com.example.todoapp.ValidationException;
 import com.example.todoapp.batchreporting.BatchReportingAdapter;
 import com.example.todoapp.model.ExampleFrameworkResponseData;
 import com.example.todoapp.model.TodoUpdateRecord;
