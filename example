@@ -863,6 +863,7 @@ public final class Constants {
     public static final String RELATIVE_OUTPUT_ARCHIVE_DIR = "output_archive";
 
     public static final String INPUT_FILE_PATTERN = "*"; // All files put into incoming are considered input files
+    public static final String MY_LOGGER_LOG_EMAIL_INDICATOR = "(Sending email via Kibana for todo-record-file-processing)";
     public static final int SLEEP_SECONDS_DELAY_BEFORE_EXIT = 1; // FIXME turn back to 60 before committing
 
     // Todo File prefixes
