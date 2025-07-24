@@ -6822,16 +6822,21 @@ public final class TodoUpdBatchApplication {
         ConfigurationValidator.validateConfiguration(serviceProvider.getConfig(), serviceProvider.getFileSystemProvider());
         
         // Check for dangerous delete flag files and perform cleanup if needed
-        StartupCleanupService cleanupService = new StartupCleanupService(serviceProvider.getConfig());
-        
-        // Check for local cleanup flag
-        if (cleanupService.checkAndPerformCleanup()) {
-            LOGGER.warn("Startup cleanup was performed. All local directories have been cleared.");
-        }
-        
-        // Check for remote cleanup flag
-        if (cleanupService.checkAndPerformRemoteCleanup(serviceProvider)) {
-            LOGGER.warn("Remote cleanup was performed. All remote files have been cleared.");
+        try {
+            StartupCleanupService cleanupService = new StartupCleanupService(serviceProvider.getConfig());
+            
+            // Check for local cleanup flag
+            if (cleanupService.checkAndPerformCleanup()) {
+                LOGGER.warn("Startup cleanup was performed. All local directories have been cleared.");
+            }
+            
+            // Check for remote cleanup flag
+            if (cleanupService.checkAndPerformRemoteCleanup(serviceProvider)) {
+                LOGGER.warn("Remote cleanup was performed. All remote files have been cleared.");
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error during startup cleanup check, continuing with normal operation", e);
+            // Continue with normal operation - cleanup is optional
         }
             
         // Audit application start
