@@ -238,7 +238,7 @@ import com.example.todoapp.provider.FileSystemProvider;
 import com.example.todoapp.util.Utils;
 
 /**
- * Validator for TODO Update Batch configuration properties.
+ * Validator for userIdentifier Change Batch configuration properties.
  * This class contains the extype1 validation logic from TodoUpdBatchApplication.validateProperties()
  * without any changes.
  */
@@ -851,7 +851,7 @@ package com.example.todoapp;
 import com.example.deers.batchreporting.api.datatypes.AppId;
 
 /**
- * Constants used throughout the TODO Update Batch Application.
+ * Constants used throughout the userIdentifier Change Batch Application.
  */
 public final class Constants {
 
@@ -863,7 +863,7 @@ public final class Constants {
     public static final String RELATIVE_OUTPUT_ARCHIVE_DIR = "output_archive";
 
     public static final String INPUT_FILE_PATTERN = "*"; // All files put into incoming are considered input files
-    public static final String MY_LOGGER_LOG_EMAIL_INDICATOR = "(Sending email via Kibana for todo-record-file-processing)";
+    public static final String MY_LOGGER_LOG_EMAIL_INDICATOR = "(Sending email via Kibana for userIdentifier-chg-file-processing)";
     public static final int SLEEP_SECONDS_DELAY_BEFORE_EXIT = 1; // FIXME turn back to 60 before committing
 
     // Todo File prefixes
@@ -875,7 +875,7 @@ public final class Constants {
 
     public static class BatchReportingCounters {
 
-        public static final String TODO_RECORD_PRC_ID = "36";
+        public static final String PNID_CHG_PRC_ID = "36";
         public static final String UNKNOWN_ERROR_PRC_ID = "12";
 
         public static class InputRecordLengthIncorrect {
@@ -1060,7 +1060,7 @@ File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/ExitCode.java
 package com.example.todoapp;
 
 /**
- * Exit codes for the TODO Update Batch Application.
+ * Exit codes for the userIdentifier Change Batch Application.
  * This enum centralizes exit code management to support Fortify compliance
  * by avoiding System.exit() calls throughout the codebase.
  */
@@ -1114,14 +1114,10 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.example.todoapp.pojo.exampleframework.ProcessorType1ion;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
-import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
-import com.example.todoapp.pojo.exampleframework.StatusDetail;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.model.jsonl.JsonlProcessorType1ion;
 import com.example.todoapp.model.jsonl.JsonlStatusDetail;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
 
 /**
  * Data class to store EXAMPLE_FRAMEWORK response information for BATCHREPORTING processing.
@@ -1148,7 +1144,7 @@ public class ExampleFrameworkResponseData {
     @JsonProperty("newAdminstrIdType")
     private String newAdminstrIdType;
     
-    // Note: TODO_OBJs are type1ually the sponsor IDs in this context
+    // Note: userIdentifiers are type1ually the sponsor IDs in this context
     
     @JsonProperty("success")
     private boolean success;
@@ -1180,36 +1176,15 @@ public class ExampleFrameworkResponseData {
     @JsonProperty("statusDetail")
     private JsonlStatusDetail statusDetail;
     
+    @JsonProperty("dodediPersonId")
+    private String dodediPersonId;  // New field from outputs/sponsorBusinessObject/sponsorIdentityBusinessObject
+    
+    @JsonProperty("sponsorDuplicateId")
+    private String sponsorDuplicateId;  // New field from outputs/sponsorBusinessObject/sponsorIdentityBusinessObject
+    
     // Default constructor for Jackson
     public ExampleFrameworkResponseData() {}
     
-    // Constructor for successful EXAMPLE_FRAMEWORK response
-    public ExampleFrameworkResponseData(TodoUpdateRecord record, int lineNumber, boolean success, 
-                          String returnReasonCode, String returnStatusCode, List<ProcessorType1ion> processorType1ions) {
-        this.lineNumber = lineNumber;
-        this.originalLine = record.getOriginalLine();
-        this.oldAdminstrId = record.getOldAdminstrId();
-        this.oldAdminstrIdType = record.getOldAdminstrIdType();
-        this.newAdminstrId = record.getNewAdminstrId();
-        this.newAdminstrIdType = record.getNewAdminstrIdType();
-        // TODO_OBJs are the sponsor IDs
-        this.success = success;
-        this.returnReasonCode = returnReasonCode;
-        this.returnStatusCode = returnStatusCode;
-        this.processorType1ions = new ArrayList<>();
-        if (processorType1ions != null) {
-            for (ProcessorType1ion type1ion : processorType1ions) {
-                JsonlProcessorType1ion jsonlType1ion = new JsonlProcessorType1ion();
-                jsonlType1ion.setProcessorType1ionCode(type1ion.getProcessorType1ionCode());
-                jsonlType1ion.setProcessorMessageDetailText(type1ion.getProcessorMessageDetailText());
-                jsonlType1ion.setProcessorMessageFormatCode(type1ion.getProcessorMessageFormatCode());
-                jsonlType1ion.setProcessorName(type1ion.getProcessorName());
-                this.processorType1ions.add(jsonlType1ion);
-            }
-        }
-        this.validationError = false;
-        this.record = record;
-    }
     
     // Constructor for validation error
     public ExampleFrameworkResponseData(TodoUpdateRecord record, int lineNumber, String returnStatusCode, 
@@ -1220,7 +1195,7 @@ public class ExampleFrameworkResponseData {
         this.oldAdminstrIdType = record.getOldAdminstrIdType();
         this.newAdminstrId = record.getNewAdminstrId();
         this.newAdminstrIdType = record.getNewAdminstrIdType();
-        // TODO_OBJs are the sponsor IDs
+        // userIdentifiers are the sponsor IDs
         this.success = false;
         this.validationError = true;
         this.validationErrorCode = returnReasonCode;  // The type1ual error code (e.g., "501", "502")
@@ -1231,8 +1206,9 @@ public class ExampleFrameworkResponseData {
         this.record = record;
     }
     
-    // Constructor for EXAMPLE_FRAMEWORK response with ExchangeMessage
-    public ExampleFrameworkResponseData(TodoUpdateRecord record, int lineNumber, ExchangeMessage response) {
+    // Constructor for EXAMPLE_FRAMEWORK response with status codes
+    public ExampleFrameworkResponseData(TodoUpdateRecord record, int lineNumber, String returnStatusCode, 
+                          String returnReasonCode, String errorMessage, ExchangeMessage response) {
         this.lineNumber = lineNumber;
         this.originalLine = record.getOriginalLine();
         this.oldAdminstrId = record.getOldAdminstrId();
@@ -1241,50 +1217,41 @@ public class ExampleFrameworkResponseData {
         this.newAdminstrIdType = record.getNewAdminstrIdType();
         this.record = record;
         
-        // Extrtype1 status information from response (don't store response object)
-        if (response != null && response.getStatus() != null) {
-            IFrameworkStatus status = response.getStatus();
-            if (status instanceof ExampleFrameworkStatus) {
-                ExampleFrameworkStatus exampleframeworkStatus = (ExampleFrameworkStatus) status;
-                // Get status details and extrtype1 data
-                List<StatusDetail> statusDetails = exampleframeworkStatus.getStatusDetails();
-                if (!statusDetails.isEmpty()) {
-                    StatusDetail detail = statusDetails.get(0);
-                    this.returnStatusCode = detail.getSystemReturnCode();        // 1-2 digit status code
-                    this.returnReasonCode = detail.getSystemReturnStatusCode();  // 3-digit reason code
-                    this.errorMessage = detail.getExampleFrameworkExceptionMessage();
-                    this.success = "0".equals(this.returnStatusCode);
-                    // Create JSONL status detail with extrtype1ed data
-                    this.statusDetail = new JsonlStatusDetail();
-                    this.statusDetail.setSystemReturnCode(detail.getSystemReturnCode());
-                    this.statusDetail.setSystemReturnStatusCode(detail.getSystemReturnStatusCode());
-                    this.statusDetail.setExampleFrameworkExceptionName(detail.getExampleFrameworkExceptionName());
-                    this.statusDetail.setExampleFrameworkExceptionMessage(detail.getExampleFrameworkExceptionMessage());
-                    this.statusDetail.setExampleFrameworkExceptionStackTrace(detail.getExampleFrameworkExceptionStackTrace());
-                } else {
-                    this.success = false;
-                }
-                
-                // Get processor type1ions and extrtype1 data
-                List<ProcessorType1ion> originalType1ions = exampleframeworkStatus.getProcessorType1ions();
-                this.processorType1ions = new ArrayList<>();
-                if (originalType1ions != null) {
-                    for (ProcessorType1ion type1ion : originalType1ions) {
-                        JsonlProcessorType1ion jsonlType1ion = new JsonlProcessorType1ion();
-                        jsonlType1ion.setProcessorType1ionCode(type1ion.getProcessorType1ionCode());
-                        jsonlType1ion.setProcessorMessageDetailText(type1ion.getProcessorMessageDetailText());
-                        jsonlType1ion.setProcessorMessageFormatCode(type1ion.getProcessorMessageFormatCode());
-                        jsonlType1ion.setProcessorName(type1ion.getProcessorName());
-                        this.processorType1ions.add(jsonlType1ion);
-                    }
-                }
-            } else {
-                this.success = false;
-            }
-        } else {
-            this.success = false;
-        }
+        // Use the provided status codes
+        this.returnStatusCode = returnStatusCode;
+        this.returnReasonCode = returnReasonCode;
+        this.errorMessage = errorMessage;
+        this.success = "0".equals(this.returnStatusCode);
         this.validationError = false;
+        
+        // Extrtype1 fields from the new ExchangeMessage structure
+        if (response != null) {
+            // Extrtype1 dodediPersonId and sponsorDuplicateId from outputs
+            if (response.getOutputs() != null && 
+                response.getOutputs().getAdminstrBusinessObject() != null && 
+                response.getOutputs().getAdminstrBusinessObject().getAdminstrIdentityBusinessObject() != null) {
+                
+                mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrIdentityBusinessObject identityBusinessObject = 
+                    response.getOutputs().getAdminstrBusinessObject().getAdminstrIdentityBusinessObject();
+                
+                this.dodediPersonId = identityBusinessObject.getDodediPersonId();
+                this.sponsorDuplicateId = identityBusinessObject.getAdminstrDuplicateId();
+            }
+            
+            // Create JSONL status detail for logging/debugging from new status structure
+            if (response.getStatus() != null && response.getStatus().getStatusDetail() != null) {
+                mil.osd.myorg.todoapp.pojo.exampleframework.Status.StatusDetail statusDetail = response.getStatus().getStatusDetail();
+                this.statusDetail = new JsonlStatusDetail();
+                this.statusDetail.setSystemReturnCode(statusDetail.getSystemReturnCode());
+                this.statusDetail.setSystemReturnStatusCode(statusDetail.getSystemReturnStatusCode());
+                this.statusDetail.setExampleFrameworkExceptionName(statusDetail.getSystemReturnClassText());
+                this.statusDetail.setExampleFrameworkExceptionMessage(statusDetail.getSystemReturnContextText());
+                this.statusDetail.setExampleFrameworkExceptionStackTrace(""); // Not available in new structure
+            }
+            
+            // Initialize empty processor type1ions list (will be populated if needed in future)
+            this.processorType1ions = new ArrayList<>();
+        }
     }
     
     // Getters
@@ -1294,7 +1261,7 @@ public class ExampleFrameworkResponseData {
     public String getOldAdminstrIdType() { return oldAdminstrIdType; }
     public String getNewAdminstrId() { return newAdminstrId; }
     public String getNewAdminstrIdType() { return newAdminstrIdType; }
-    // TODO_OBJs are accessed via sponsor IDs
+    // userIdentifiers are accessed via sponsor IDs
     public boolean isSuccess() { return success; }
     public String getReturnReasonCode() { return returnReasonCode; }
     public String getReturnStatusCode() { return returnStatusCode; }
@@ -1310,6 +1277,8 @@ public class ExampleFrameworkResponseData {
     public String getValidationDescription() { return validationDescription; }
     public TodoUpdateRecord getRecord() { return record; }
     public JsonlStatusDetail getStatusDetail() { return statusDetail; }
+    public String getDodediPersonId() { return dodediPersonId; }
+    public String getAdminstrDuplicateId() { return sponsorDuplicateId; }
     
     // Setters for Jackson
     public void setLineNumber(int lineNumber) { this.lineNumber = lineNumber; }
@@ -1318,7 +1287,7 @@ public class ExampleFrameworkResponseData {
     public void setOldAdminstrIdType(String oldAdminstrIdType) { this.oldAdminstrIdType = oldAdminstrIdType; }
     public void setNewAdminstrId(String newAdminstrId) { this.newAdminstrId = newAdminstrId; }
     public void setNewAdminstrIdType(String newAdminstrIdType) { this.newAdminstrIdType = newAdminstrIdType; }
-    // TODO_OBJs are set via sponsor IDs
+    // userIdentifiers are set via sponsor IDs
     public void setSuccess(boolean success) { this.success = success; }
     public void setReturnReasonCode(String returnReasonCode) { this.returnReasonCode = returnReasonCode; }
     public void setReturnStatusCode(String returnStatusCode) { this.returnStatusCode = returnStatusCode; }
@@ -1334,6 +1303,8 @@ public class ExampleFrameworkResponseData {
     public void setValidationDescription(String validationDescription) { this.validationDescription = validationDescription; }
     public void setRecord(TodoUpdateRecord record) { this.record = record; }
     public void setStatusDetail(JsonlStatusDetail statusDetail) { this.statusDetail = statusDetail; }
+    public void setDodediPersonId(String dodediPersonId) { this.dodediPersonId = dodediPersonId; }
+    public void setAdminstrDuplicateId(String sponsorDuplicateId) { this.sponsorDuplicateId = sponsorDuplicateId; }
 }====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/model/jsonl/JsonlProcessorType1ion.java
@@ -1435,7 +1406,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.example.todoapp.RecordValidator;
 
 /**
- * Model class representing an TODO update record.
+ * Model class representing a userIdentifier change record.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class TodoUpdateRecord {
@@ -1454,15 +1425,15 @@ public class TodoUpdateRecord {
 
     @Override
     public String toString() {
-        return "TodoUpdateRecord{" + "oldAdminstrId='" + oldAdminstrId + '\'' +
-                ", oldAdminstrIdType='" + oldAdminstrIdType + '\'' +
-                ", newAdminstrId='" + newAdminstrId + '\'' +
+        // Privacy-safe toString that excludes PII data (userIdentifiers, last names)
+        return "TodoUpdateRecord{" +
+                "oldAdminstrIdType='" + oldAdminstrIdType + '\'' +
                 ", newAdminstrIdType='" + newAdminstrIdType + '\'' +
-                ", lastName='" + lastName + '\'' +
                 ", transtype1ionDate='" + transtype1ionDate + '\'' +
                 ", transtype1ionSequenceId='" + transtype1ionSequenceId + '\'' +
                 ", todoFile='" + todoFile + '\'' +
-                ", siteId='" + siteId + '\'' + '}';
+                ", siteId='" + siteId + '\'' +
+                ", lineNumber=" + lineNumber + '}';
     }
 
     /**
@@ -1730,42 +1701,319 @@ File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframewor
 ====================
 package com.example.todoapp.pojo.exampleframework;
 
-import java.util.Optional;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IExchangeMessage;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.Inputs;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.Outputs;
 
+/**
+ * Root class for EXAMPLE_FRAMEWORK XML response deserialization.
+ * Represents the ExchangeMessage XML structure from EXAMPLE_FRAMEWORK responses.
+ */
+@JacksonXmlRootElement(localName = "ExchangeMessage")
 public class ExchangeMessage implements IExchangeMessage {
-    @JsonProperty("inputs")
+    
+    @JacksonXmlProperty(localName = "headers")
+    private Headers headers;
+    
+    @JacksonXmlProperty(localName = "hints")
+    private Hints hints;
+    
+    @JacksonXmlProperty(localName = "inputs")
     private Inputs inputs;
-
-    @JsonProperty("outputs")
+    
+    @JacksonXmlProperty(localName = "outputs")
     private Outputs outputs;
-
-    @JsonProperty("status")
-    private ExampleFrameworkStatus status;
-
-    @JsonIgnore
-    public Optional<Inputs> getInputs() {
-        return Optional.ofNullable(inputs);
+    
+    @JacksonXmlProperty(localName = "status")
+    private Status status;
+    
+    // Default constructor
+    public ExchangeMessage() {}
+    
+    // Getters and setters
+    public Headers getHeaders() { return headers; }
+    public void setHeaders(Headers headers) { this.headers = headers; }
+    
+    public Hints getHints() { return hints; }
+    public void setHints(Hints hints) { this.hints = hints; }
+    
+    public Inputs getInputs() { return inputs; }
+    public void setInputs(Inputs inputs) { this.inputs = inputs; }
+    
+    public Outputs getOutputs() { return outputs; }
+    public void setOutputs(Outputs outputs) { this.outputs = outputs; }
+    
+    public Status getStatus() { return status; }
+    public void setStatus(Status status) { this.status = status; }
+    
+    /**
+     * Headers section of the ExchangeMessage
+     */
+    public static class Headers {
+        @JacksonXmlProperty(localName = "Security")
+        private Security security;
+        
+        public Security getSecurity() { return security; }
+        public void setSecurity(Security security) { this.security = security; }
     }
-
-    @JsonIgnore
-    public Optional<Outputs> getOutputs() {
-        return Optional.ofNullable(outputs);
+    
+    /**
+     * Security element within headers
+     */
+    public static class Security {
+        @JacksonXmlProperty(isAttribute = true)
+        private String productId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String runId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String siteId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String todoFile;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String userId;
+        
+        // Getters and setters
+        public String getProductId() { return productId; }
+        public void setProductId(String productId) { this.productId = productId; }
+        
+        public String getRunId() { return runId; }
+        public void setRunId(String runId) { this.runId = runId; }
+        
+        public String getSiteId() { return siteId; }
+        public void setSiteId(String siteId) { this.siteId = siteId; }
+        
+        public String getTodoFile() { return todoFile; }
+        public void setTodoFile(String todoFile) { this.todoFile = todoFile; }
+        
+        public String getUserId() { return userId; }
+        public void setUserId(String userId) { this.userId = userId; }
     }
-
-    @Override
-    public IFrameworkStatus getStatus() {
-        return status;
+    
+    /**
+     * Hints section of the ExchangeMessage
+     */
+    public static class Hints {
+        @JacksonXmlProperty(localName = "Hint")
+        private Hint hint;
+        
+        public Hint getHint() { return hint; }
+        public void setHint(Hint hint) { this.hint = hint; }
     }
+    
+    /**
+     * Hint element within hints
+     */
+    public static class Hint {
+        @JacksonXmlProperty(isAttribute = true)
+        private String exampleframeworkSource;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String instructionTypeCode;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String processorParameterText;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String pullType;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String transtype1ionId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String businessContext;
+        
+        // Getters and setters
+        public String getExampleFrameworkSource() { return exampleframeworkSource; }
+        public void setExampleFrameworkSource(String exampleframeworkSource) { this.exampleframeworkSource = exampleframeworkSource; }
+        
+        public String getInstructionTypeCode() { return instructionTypeCode; }
+        public void setInstructionTypeCode(String instructionTypeCode) { this.instructionTypeCode = instructionTypeCode; }
+        
+        public String getProcessorParameterText() { return processorParameterText; }
+        public void setProcessorParameterText(String processorParameterText) { this.processorParameterText = processorParameterText; }
+        
+        public String getPullType() { return pullType; }
+        public void setPullType(String pullType) { this.pullType = pullType; }
+        
+        public String getTranstype1ionId() { return transtype1ionId; }
+        public void setTranstype1ionId(String transtype1ionId) { this.transtype1ionId = transtype1ionId; }
+        
+        public String getBusinessContext() { return businessContext; }
+        public void setBusinessContext(String businessContext) { this.businessContext = businessContext; }
+    }
+    
+    /**
+     * Inputs section of the ExchangeMessage
+     */
+    public static class Inputs {
+        @JacksonXmlProperty(localName = "AdminstrBUSINESSOBJECT")
+        private AdminstrBUSINESSOBJECT sponsorBUSINESSOBJECT;
+        
+        public AdminstrBUSINESSOBJECT getAdminstrBUSINESSOBJECT() { return sponsorBUSINESSOBJECT; }
+        public void setAdminstrBUSINESSOBJECT(AdminstrBUSINESSOBJECT sponsorBUSINESSOBJECT) { this.sponsorBUSINESSOBJECT = sponsorBUSINESSOBJECT; }
+    }
+    
+    /**
+     * AdminstrBUSINESSOBJECT within inputs
+     */
+    public static class AdminstrBUSINESSOBJECT {
+        @JacksonXmlProperty(isAttribute = true)
+        private String subjectInstanceId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String subjectUpdateCode;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String personTypeCode;
+        
+        // Getters and setters
+        public String getSubjectInstanceId() { return subjectInstanceId; }
+        public void setSubjectInstanceId(String subjectInstanceId) { this.subjectInstanceId = subjectInstanceId; }
+        
+        public String getSubjectUpdateCode() { return subjectUpdateCode; }
+        public void setSubjectUpdateCode(String subjectUpdateCode) { this.subjectUpdateCode = subjectUpdateCode; }
+        
+        public String getPersonTypeCode() { return personTypeCode; }
+        public void setPersonTypeCode(String personTypeCode) { this.personTypeCode = personTypeCode; }
+    }
+}====================
 
-    @JsonIgnore
-    public Optional<ExampleFrameworkStatus> getOptionalStatus() {
-        return Optional.ofNullable(status);
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/Outputs.java
+====================
+package com.example.todoapp.pojo.exampleframework;
+
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+
+/**
+ * Outputs section of the ExchangeMessage XML response.
+ * Contains the sponsorBusinessObject with the processed results from EXAMPLE_FRAMEWORK.
+ */
+public class Outputs {
+    
+    @JacksonXmlProperty(localName = "sponsorBusinessObject")
+    private AdminstrBusinessObject sponsorBusinessObject;
+    
+    // Default constructor
+    public Outputs() {}
+    
+    // Getters and setters
+    public AdminstrBusinessObject getAdminstrBusinessObject() { return sponsorBusinessObject; }
+    public void setAdminstrBusinessObject(AdminstrBusinessObject sponsorBusinessObject) { this.sponsorBusinessObject = sponsorBusinessObject; }
+    
+    /**
+     * AdminstrBusinessObject within outputs section
+     */
+    public static class AdminstrBusinessObject {
+        @JacksonXmlProperty(isAttribute = true)
+        private String subjectInstanceId;
+        
+        @JacksonXmlProperty(localName = "sponsorIdentityBusinessObject")
+        private AdminstrIdentityBusinessObject sponsorIdentityBusinessObject;
+        
+        // Getters and setters
+        public String getSubjectInstanceId() { return subjectInstanceId; }
+        public void setSubjectInstanceId(String subjectInstanceId) { this.subjectInstanceId = subjectInstanceId; }
+        
+        public AdminstrIdentityBusinessObject getAdminstrIdentityBusinessObject() { return sponsorIdentityBusinessObject; }
+        public void setAdminstrIdentityBusinessObject(AdminstrIdentityBusinessObject sponsorIdentityBusinessObject) { this.sponsorIdentityBusinessObject = sponsorIdentityBusinessObject; }
+    }
+    
+    /**
+     * AdminstrIdentityBusinessObject contains the key fields we need: dodediPersonId and sponsorDuplicateId
+     */
+    public static class AdminstrIdentityBusinessObject {
+        @JacksonXmlProperty(isAttribute = true)
+        private String myorgDependentSuffixCode;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String dodediPersonId;  // KEY FIELD WE NEED
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String legacyDeersDependentSuffixCode;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String onPersonCrossReference;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String onAdminstrFamilyCrossReference;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String personDuplicateId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String personId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String personIdTypeCode;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String personOnDatabase;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String sponsorDuplicateId;  // KEY FIELD WE NEED
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String sponsorPersonId;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String sponsorPersonIdTypeCode;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String transtype1ionCurrencyDate;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String transtype1ionSequenceId;
+        
+        // Default constructor
+        public AdminstrIdentityBusinessObject() {}
+        
+        // Getters and setters
+        public String getDmdcDependentSuffixCode() { return myorgDependentSuffixCode; }
+        public void setDmdcDependentSuffixCode(String myorgDependentSuffixCode) { this.myorgDependentSuffixCode = myorgDependentSuffixCode; }
+        
+        public String getDodediPersonId() { return dodediPersonId; }
+        public void setDodediPersonId(String dodediPersonId) { this.dodediPersonId = dodediPersonId; }
+        
+        public String getLegacyDeersDependentSuffixCode() { return legacyDeersDependentSuffixCode; }
+        public void setLegacyDeersDependentSuffixCode(String legacyDeersDependentSuffixCode) { this.legacyDeersDependentSuffixCode = legacyDeersDependentSuffixCode; }
+        
+        public String getOnPersonCrossReference() { return onPersonCrossReference; }
+        public void setOnPersonCrossReference(String onPersonCrossReference) { this.onPersonCrossReference = onPersonCrossReference; }
+        
+        public String getOnAdminstrFamilyCrossReference() { return onAdminstrFamilyCrossReference; }
+        public void setOnAdminstrFamilyCrossReference(String onAdminstrFamilyCrossReference) { this.onAdminstrFamilyCrossReference = onAdminstrFamilyCrossReference; }
+        
+        public String getPersonDuplicateId() { return personDuplicateId; }
+        public void setPersonDuplicateId(String personDuplicateId) { this.personDuplicateId = personDuplicateId; }
+        
+        public String getPersonId() { return personId; }
+        public void setPersonId(String personId) { this.personId = personId; }
+        
+        public String getPersonIdTypeCode() { return personIdTypeCode; }
+        public void setPersonIdTypeCode(String personIdTypeCode) { this.personIdTypeCode = personIdTypeCode; }
+        
+        public String getPersonOnDatabase() { return personOnDatabase; }
+        public void setPersonOnDatabase(String personOnDatabase) { this.personOnDatabase = personOnDatabase; }
+        
+        public String getAdminstrDuplicateId() { return sponsorDuplicateId; }
+        public void setAdminstrDuplicateId(String sponsorDuplicateId) { this.sponsorDuplicateId = sponsorDuplicateId; }
+        
+        public String getAdminstrPersonId() { return sponsorPersonId; }
+        public void setAdminstrPersonId(String sponsorPersonId) { this.sponsorPersonId = sponsorPersonId; }
+        
+        public String getAdminstrPersonIdTypeCode() { return sponsorPersonIdTypeCode; }
+        public void setAdminstrPersonIdTypeCode(String sponsorPersonIdTypeCode) { this.sponsorPersonIdTypeCode = sponsorPersonIdTypeCode; }
+        
+        public String getTranstype1ionCurrencyDate() { return transtype1ionCurrencyDate; }
+        public void setTranstype1ionCurrencyDate(String transtype1ionCurrencyDate) { this.transtype1ionCurrencyDate = transtype1ionCurrencyDate; }
+        
+        public String getTranstype1ionSequenceId() { return transtype1ionSequenceId; }
+        public void setTranstype1ionSequenceId(String transtype1ionSequenceId) { this.transtype1ionSequenceId = transtype1ionSequenceId; }
     }
 }====================
 
@@ -1949,6 +2197,93 @@ public class StatusDetail implements IFrameworkStatusDetail {
 }
 ====================
 
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/Status.java
+====================
+package com.example.todoapp.pojo.exampleframework;
+
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
+import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
+import java.util.List;
+import java.util.Arrays;
+
+/**
+ * Status section of the ExchangeMessage XML response.
+ * Contains status details including return codes.
+ */
+public class Status implements IFrameworkStatus {
+    
+    @JacksonXmlProperty(localName = "statusDetail")
+    private StatusDetail statusDetail;
+    
+    // Default constructor
+    public Status() {}
+    
+    // Getters and setters
+    public StatusDetail getStatusDetail() { return statusDetail; }
+    public void setStatusDetail(StatusDetail statusDetail) { this.statusDetail = statusDetail; }
+    
+    // Implement IFrameworkStatus method
+    @Override
+    public <T extends IFrameworkStatusDetail> List<T> getStatusDetails() {
+        if (statusDetail == null) {
+            return Arrays.asList();
+        }
+        return Arrays.asList((T) statusDetail);
+    }
+    
+    /**
+     * StatusDetail contains the return codes and status information
+     */
+    public static class StatusDetail implements IFrameworkStatusDetail {
+        @JacksonXmlProperty(isAttribute = true)
+        private String systemReturnClassText;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String systemReturnCode;  // 1-2 digit status code (e.g., "0" for success)
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String systemReturnContextText;
+        
+        @JacksonXmlProperty(isAttribute = true)
+        private String systemReturnStatusCode;  // 3-digit reason code (e.g., "0", "501", etc.)
+        
+        // Default constructor
+        public StatusDetail() {}
+        
+        // Getters and setters
+        public String getSystemReturnClassText() { return systemReturnClassText; }
+        public void setSystemReturnClassText(String systemReturnClassText) { this.systemReturnClassText = systemReturnClassText; }
+        
+        public String getSystemReturnCode() { return systemReturnCode; }
+        public void setSystemReturnCode(String systemReturnCode) { this.systemReturnCode = systemReturnCode; }
+        
+        public String getSystemReturnContextText() { return systemReturnContextText; }
+        public void setSystemReturnContextText(String systemReturnContextText) { this.systemReturnContextText = systemReturnContextText; }
+        
+        public String getSystemReturnStatusCode() { return systemReturnStatusCode; }
+        public void setSystemReturnStatusCode(String systemReturnStatusCode) { this.systemReturnStatusCode = systemReturnStatusCode; }
+        
+        // Implement IFrameworkStatusDetail methods
+        @Override
+        public String getExampleFrameworkExceptionMessage() {
+            // Map our systemReturnContextText to the expected EXAMPLE_FRAMEWORK exception message
+            return systemReturnContextText;
+        }
+        
+        @Override
+        public String getExampleFrameworkExceptionName() {
+            // Map our systemReturnClassText to the expected EXAMPLE_FRAMEWORK exception name
+            return systemReturnClassText;
+        }
+        
+        public String getExampleFrameworkExceptionStackTrace() {
+            // Our XML structure doesn't include stack traces, return empty string
+            return "";
+        }
+    }
+}====================
+
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/processor/BatchReportingPhaseProcessor.java
 ====================
 package com.example.todoapp.processor;
@@ -2069,17 +2404,17 @@ public class BatchReportingPhaseProcessor {
                     try {
                         bookmarkService.updateProgress(i + 1);
                     } catch (IOException e) {
-                        LOGGER.warn("Failed to update bookmark progress", e);
+                        LOGGER.warn("Failed to update bookmark progress: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                     }
                 }
                 
             } catch (IOException e) {
-                LOGGER.error("I/O error updating BATCHREPORTING for record at line {}", 
-                    responseData.getLineNumber(), e);
+                LOGGER.error("I/O error updating BATCHREPORTING for submission {} line {}: {} - {}", 
+                    todoFile, responseData.getLineNumber(), e.getClass().getSimpleName(), e.getMessage());
                 // Continue processing other records
             } catch (RuntimeException e) {
-                LOGGER.error("Runtime error updating BATCHREPORTING for record at line {}", 
-                    responseData.getLineNumber(), e);
+                LOGGER.error("Runtime error updating BATCHREPORTING for submission {} line {}: {} - {}", 
+                    todoFile, responseData.getLineNumber(), e.getClass().getSimpleName(), e.getMessage());
                 // Continue processing other records
             }
         }
@@ -2114,9 +2449,13 @@ public class BatchReportingPhaseProcessor {
         String longTodoFile = Constants.BATCHREPORTING_TODO_FILE_PREFIX + 
             Utils.leftPad("0", 7, todoFile);
         
-        // BATCHREPORTING fields that don't apply to TODO-RECORD
-        Long edi = 0L;
-        Integer userDuplicationId = 0;
+        // Extrtype1 values from EXAMPLE_FRAMEWORK response data
+        Long edi = responseData.getDodediPersonId() != null ? 
+            Long.parseLong(responseData.getDodediPersonId()) : 0L;
+        Integer userDuplicationId = responseData.getAdminstrDuplicateId() != null ? 
+            Integer.parseInt(responseData.getAdminstrDuplicateId()) : 0;
+        
+        // BATCHREPORTING fields that don't apply to PNID-CHG
         String categoryCode = Constants.CATEGORY_CODE_NOT_APPLICALBE;
         String webServiceCode = Constants.WEB_SERVICE_CODE_NOT_APPLICALBE;
         String locationCode = null;
@@ -2157,23 +2496,23 @@ public class BatchReportingPhaseProcessor {
         if (responseData.isValidationError()) {
             // Validation error (client-side error, did not make it to EXAMPLE_FRAMEWORK)
             // Use addClientProcessCounter for validation/application errors
-            String errorCounterId = Constants.BatchReportingCounters.TODO_RECORD_PRC_ID + 
+            String errorCounterId = Constants.BatchReportingCounters.PNID_CHG_PRC_ID + 
                 getErrorSequenceId(returnReasonCode);  // Now uses the type1ual reason code
             batchreportingAdapter.addClientProcessCounter(
                 batchreportingApiKey,
                 errorCounterId,
-                "TODOUPDATE"
+                "PNIDCHG"
             );
         } else if (!"0".equals(returnStatusCode)) {
             // Check if this is an application error (return status "2") or EXAMPLE_FRAMEWORK error
             if ("2".equals(returnStatusCode)) {
                 // Application error - use addClientProcessCounter
-                String errorCounterId = Constants.BatchReportingCounters.TODO_RECORD_PRC_ID + 
+                String errorCounterId = Constants.BatchReportingCounters.PNID_CHG_PRC_ID + 
                     Constants.BatchReportingCounters.UnknownError.ALT_PRC_ID;
                 batchreportingAdapter.addClientProcessCounter(
                     batchreportingApiKey,
                     errorCounterId,
-                    "TODOUPDATE"
+                    "PNIDCHG"
                 );
             } else {
                 // EXAMPLE_FRAMEWORK returned an error - use addProcessCounter for EXAMPLE_FRAMEWORK-originated errors
@@ -2206,7 +2545,7 @@ public class BatchReportingPhaseProcessor {
                         "",
                         Constants.BATCHREPORTING_MERESTART_SERVICEGE_FORMAT_CODE,
                         responseData.getErrorMessage(),
-                        "TODOUPDATE"
+                        "PNIDCHG"
                     );
                 }
             }
@@ -2262,12 +2601,9 @@ import com.example.todoapp.StopException;
 import com.example.todoapp.model.ExampleFrameworkResponseData;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
-import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
 import com.example.todoapp.service.BookmarkService;
 import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.service.ExampleFrameworkService;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
 
 /**
  * Handles the EXAMPLE_FRAMEWORK phase of record processing.
@@ -2386,8 +2722,8 @@ public class ExampleFrameworkPhaseProcessor {
                     recordValidator.validateRecord(record, records);
                 
                 if (validationResult != null) {
-                    LOGGER.debug("Record at line {} failed validation: {}", 
-                        lineNumber, validationResult.getDescription());
+                    LOGGER.debug("Record at line {} failed validation with code: {}", 
+                        lineNumber, validationResult.getAltPrcId());
                     validationErrors.add(new ValidationError(record, validationResult));
                     
                     // Save validation error to response file for BATCHREPORTING processing
@@ -2415,7 +2751,7 @@ public class ExampleFrameworkPhaseProcessor {
                     try {
                         bookmarkService.updateProgress(i + 1);
                     } catch (IOException e) {
-                        LOGGER.warn("Failed to update bookmark progress", e);
+                        LOGGER.warn("Failed to update bookmark progress: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                     }
                 }
                 
@@ -2425,11 +2761,11 @@ public class ExampleFrameworkPhaseProcessor {
             } catch (IOException e) {
                 // For IOExceptions (which include retry exhaustion), we should propagate 
                 // them up to allow proper handling (infinite retry or stop)
-                LOGGER.error("IOException during EXAMPLE_FRAMEWORK processing at line {}, propagating for retry handling", lineNumber, e);
+                LOGGER.error("IOException during EXAMPLE_FRAMEWORK processing at line {}, propagating for retry handling: {} - {}", lineNumber, e.getClass().getSimpleName(), e.getMessage());
                 throw e;
             } catch (RuntimeException e) {
                 // Only catch runtime exceptions that aren't part of normal retry flow
-                LOGGER.error("Runtime error processing record at line {}", lineNumber, e);
+                LOGGER.error("Runtime error processing record at line {}: {} - {}", lineNumber, e.getClass().getSimpleName(), e.getMessage());
                 
                 // Create error response data
                 ExampleFrameworkResponseData errorData = new ExampleFrameworkResponseData(
@@ -2441,7 +2777,7 @@ public class ExampleFrameworkPhaseProcessor {
                 try {
                     responseFileService.writeExampleFrameworkResponse(errorData, todoFile, todoFilePrefix);
                 } catch (IOException writeError) {
-                    LOGGER.error("Failed to write error response for runtime exception at line {}", lineNumber, writeError);
+                    LOGGER.error("Failed to write error response for runtime exception at line {}: {} - {}", lineNumber, writeError.getClass().getSimpleName(), writeError.getMessage());
                 }
                 exampleframeworkErrors.add(new ExampleFrameworkError(record, errorData));
             }
@@ -2462,29 +2798,24 @@ public class ExampleFrameworkPhaseProcessor {
                                      throws IOException, StopException {
         
         LOGGER.debug("Sending record to EXAMPLE_FRAMEWORK for line {}", lineNumber);
-        ExchangeMessage response = exampleframeworkService.sendTodoUpdateRequest(record, stopFilePath);
+        ExchangeMessage response = exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath);
         
         // Extrtype1 response details
         String returnStatusCode = "0";  // Default success status
         String returnReasonCode = null;  // No default - must be set by EXAMPLE_FRAMEWORK
         String errorMessage = "";
         
-        if (response != null) {
-            IFrameworkStatus exampleframeworkStatus = response.getStatus();
-            if (exampleframeworkStatus != null) {
-                List<IFrameworkStatusDetail> statusDetails = exampleframeworkStatus.getStatusDetails();
-                if (statusDetails != null && !statusDetails.isEmpty()) {
-                    IFrameworkStatusDetail detail = statusDetails.get(0);
-                    returnStatusCode = detail.getSystemReturnCode();      // 1-2 digit status
-                    returnReasonCode = detail.getSystemReturnStatusCode(); // 3-digit reason
-                    errorMessage = detail.getExampleFrameworkExceptionMessage() != null ? 
-                        detail.getExampleFrameworkExceptionMessage().replaceAll("[\r\n]+", " ") : "";
-                }
-            }
+        if (response != null && response.getStatus() != null && response.getStatus().getStatusDetail() != null) {
+            mil.osd.myorg.todoapp.pojo.exampleframework.Status.StatusDetail statusDetail = response.getStatus().getStatusDetail();
+            returnStatusCode = statusDetail.getSystemReturnCode();      // 1-2 digit status
+            returnReasonCode = statusDetail.getSystemReturnStatusCode(); // 3-digit reason
+            errorMessage = statusDetail.getSystemReturnContextText() != null ? 
+                statusDetail.getSystemReturnContextText().replaceAll("[\r\n]+", " ") : "";
         }
         
-        // Create response data using the ExchangeMessage constructor
-        ExampleFrameworkResponseData responseData = new ExampleFrameworkResponseData(record, lineNumber, response);
+        // Create response data using the extrtype1ed status codes
+        ExampleFrameworkResponseData responseData = new ExampleFrameworkResponseData(record, lineNumber, 
+            returnStatusCode, returnReasonCode, errorMessage, response);
         
         // Save to file for BATCHREPORTING phase
         responseFileService.writeExampleFrameworkResponse(responseData, todoFile, todoFilePrefix);
@@ -2555,17 +2886,21 @@ public class ErrorHandler {
                         String errorMessage, Exception exception) {
         
         String formattedMessage = String.format(
-            "%s - Return code: %s, Status code: %s, Message: %s",
-            context, returnCode, statusCode, formatErrorMessage(errorMessage)
+            "%s - Return code: %s, Status code: %s",
+            context, returnCode, statusCode
         );
         
         if ("0".equals(returnCode)) {
             // Success - no logging needed
             return;
         } else if (isTransientError(returnCode)) {
-            LOGGER.warn(formattedMessage, exception);
+            LOGGER.warn("{}: {} - {}", formattedMessage, 
+                exception != null ? exception.getClass().getSimpleName() : "Unknown", 
+                exception != null ? exception.getMessage() : "No details available");
         } else {
-            LOGGER.error(formattedMessage, exception);
+            LOGGER.error("{}: {} - {}", formattedMessage, 
+                exception != null ? exception.getClass().getSimpleName() : "Unknown", 
+                exception != null ? exception.getMessage() : "No details available");
         }
     }
     
@@ -2667,7 +3002,7 @@ public class FileOperationsService {
         File localOutputDirFile = fileSystemProvider.createFile(localOutputDir);
         if (!localOutputDirFile.exists()) {
             if (!localOutputDirFile.mkdirs()) {
-                throw new IOException("Failed to create output directory: " + localOutputDir);
+                throw new IOException("Failed to create output directory");
             }
         }
 
@@ -2718,7 +3053,7 @@ public class FileOperationsService {
             fileSystemProvider.deleteFile(localComPath);
             fileSystemProvider.deleteFile(localErrPath);
         } catch (IOException e) {
-            LOGGER.error("Failed to delete local output files after SFTP transfer", e);
+            LOGGER.error("Failed to delete local output files after SFTP transfer: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             // Continue processing - deletion failure shouldn't stop the application
         }
     }
@@ -2735,18 +3070,18 @@ public class FileOperationsService {
                               throws SftpException, GeneralSecurityException, IOException {
         
         LOGGER.debug("Starting BATCHREPORTING file transfer:");
-        LOGGER.debug("  Source directory: {}", batchreportingOutputDirectory);
-        LOGGER.debug("  Target directory: {}", remoteBatchReportingOutputDirectory);
+        LOGGER.debug("  Starting BATCHREPORTING file transfer for current submission");
+        // Directory paths removed for privacy
         
         File batchreportingDir = PathValidator.validateAndCreateFile(batchreportingOutputDirectory);
         LOGGER.debug("  Source directory exists: {}", batchreportingDir.exists());
-        LOGGER.debug("  Source directory absolute path: {}", batchreportingDir.getAbsolutePath());
+        LOGGER.debug("  Source directory validated");
         
         List<File> batchreportingOuputFiles = fileService.list(batchreportingOutputDirectory);
         LOGGER.info("Found {} BATCHREPORTING files to transfer", batchreportingOuputFiles.size());
         
         if (batchreportingOuputFiles.isEmpty()) {
-            LOGGER.warn("No BATCHREPORTING files found in directory: {}", batchreportingOutputDirectory);
+            LOGGER.warn("No BATCHREPORTING files found in BATCHREPORTING output directory");
             
             // Additional diagnostics when no files found
             LOGGER.debug("Directory listing using File.listFiles():");
@@ -2754,29 +3089,28 @@ public class FileOperationsService {
             if (directFiles != null) {
                 LOGGER.debug("  File.listFiles() found {} files", directFiles.length);
                 for (File f : directFiles) {
-                    LOGGER.debug("    {} (dir: {}, file: {}, hidden: {})", 
-                        f.getName(), f.isDirectory(), f.isFile(), f.isHidden());
+                    LOGGER.debug("    file found (dir: {}, file: {}, hidden: {})", 
+                        f.isDirectory(), f.isFile(), f.isHidden());
                 }
             } else {
-                LOGGER.warn("  File.listFiles() returned null - directory may not exist or I/O error occurred: {}", 
-                    batchreportingDir.getAbsolutePath());
+                LOGGER.warn("  File.listFiles() returned null - directory may not exist or I/O error occurred");
                 // Don't throw exception here as this is just diagnostic logging
                 // The main fileService.list() call above already handled the directory listing
             }
         }
         
         for (File batchreportingOutputFile : batchreportingOuputFiles) {
-            final String fromFileName = batchreportingOutputFile.getAbsolutePath();
+            final String fromFileName = batchreportingOutputFile.getAbsolutePath(); // File path used for SFTP operation only
             final String toFileName = remoteBatchReportingOutputDirectory + "/" + new File(fromFileName).getName();
-            LOGGER.debug("Transferring BATCHREPORTING file: {} -> {}", fromFileName, toFileName);
+            LOGGER.debug("Transferring BATCHREPORTING file");
             sftpService.put(sftpConnection, fromFileName, toFileName);
-            LOGGER.debug("Successfully transferred: {}", batchreportingOutputFile.getName());
+            LOGGER.debug("Successfully transferred BATCHREPORTING file");
         }
         
         LOGGER.debug("Deleting {} transferred BATCHREPORTING files", batchreportingOuputFiles.size());
         for (File batchreportingOutputFile : batchreportingOuputFiles) {
             fileService.delete(batchreportingOutputFile);
-            LOGGER.debug("Deleted: {}", batchreportingOutputFile.getName());
+            LOGGER.debug("Deleted transferred BATCHREPORTING file");
         }
         
         LOGGER.info("BATCHREPORTING file transfer complete");
@@ -2787,7 +3121,7 @@ public class FileOperationsService {
      */
     public void deleteInputFile(File inputFile) throws IOException {
         if (!fileService.delete(inputFile)) {
-            throw new IOException("Failed to delete input file: " + inputFile.getAbsolutePath());
+            throw new IOException("Failed to delete input file");
         }
     }
     
@@ -2831,7 +3165,7 @@ import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.service.ExampleFrameworkService;
 
 /**
- * Coordinates the two-phase processing of TODO update records.
+ * Coordinates the two-phase processing of userIdentifier change records.
  * Orchestrates EXAMPLE_FRAMEWORK and BATCHREPORTING phases and manages overall results.
  */
 public class ProcessingCoordinator {
@@ -3253,7 +3587,7 @@ import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.service.ExampleFrameworkService;
 
 /**
- * Service for processing TODO update records.
+ * Service for processing userIdentifier change records.
  * Type1s as a facade that delegates to specialized processors.
  */
 public class RecordProcessor {
@@ -3328,7 +3662,7 @@ public class RecordProcessor {
     }
     
     /**
-     * Process a batch of TODO update records using two-phase processing.
+     * Process a batch of userIdentifier change records using two-phase processing.
      */
     public ProcessingResult processRecords(List<TodoUpdateRecord> records,
                                          BatchReportingApiKey batchreportingApiKey,
@@ -3722,7 +4056,7 @@ import com.example.todoapp.service.RecoveryService;
 import com.example.todoapp.service.TodoUpdBatchService;
 
 /**
- * Main processor orchestrating the TODO update batch processing workflow.
+ * Main processor orchestrating the userIdentifier change batch processing workflow.
  * This class coordinates all the services and handles the main processing loop.
  */
 public class TodoUpdBatchProcessor {
@@ -3777,10 +4111,10 @@ public class TodoUpdBatchProcessor {
                 LOGGER.info("Stop requested while processing type: {}", type);
                 throw e;
             } catch (IOException | GeneralSecurityException e) {
-                LOGGER.error("I/O or security error processing type: " + type, e);
+                LOGGER.error("I/O or security error processing type: {} - {} - {}", type, e.getClass().getSimpleName(), e.getMessage());
                 // Continue with next type
             } catch (RuntimeException e) {
-                LOGGER.error("Runtime error processing type: " + type, e);
+                LOGGER.error("Runtime error processing type: {} - {} - {}", type, e.getClass().getSimpleName(), e.getMessage());
                 // Continue with next type
             }
         }
@@ -3824,10 +4158,10 @@ public class TodoUpdBatchProcessor {
             } catch (StopException e) {
                 throw e;
             } catch (IOException | GeneralSecurityException | SftpException e) {
-                LOGGER.error("I/O, security, or SFTP error during recovery for type: " + type, e);
+                LOGGER.error("I/O, security, or SFTP error during recovery for type: {} - {} - {}", type, e.getClass().getSimpleName(), e.getMessage());
                 throw new RuntimeException("Failed during recovery for type: " + type, e);
             } catch (RuntimeException e) {
-                LOGGER.error("Runtime error during recovery for type: " + type, e);
+                LOGGER.error("Runtime error during recovery for type: {} - {} - {}", type, e.getClass().getSimpleName(), e.getMessage());
                 throw e;
             }
         } else {
@@ -3851,13 +4185,13 @@ public class TodoUpdBatchProcessor {
                 
                 File inputFile = inputFileOpt.get();
                 String retrievedFileName = incomingDir + "/" + inputFile.getName();
-                LOGGER.info("Processing file: {} for type: {}", retrievedFileName, type);
                 
                 // Generate submission ID
                 String todoFile = generateTodoFile(type);
+                LOGGER.info("Processing file for type: {}, submission: {}", type, todoFile);
                 
                 // Archive input file
-                String inputFileArchiveName = String.format("todoapp-%s%s-input-%s.txt",
+                String inputFileArchiveName = String.format("pnidchgbat-%s%s-input-%s.txt",
                     todoFilePrefix, todoFile, 
                     timeProvider.formatCurrentDate("yyyyMMdd"));
                 fileOps.moveRemoteFile(todoUpdService, retrievedFileName, 
@@ -3870,10 +4204,10 @@ public class TodoUpdBatchProcessor {
             } catch (StopException e) {
                 throw e;
             } catch (IOException | GeneralSecurityException | SftpException e) {
-                LOGGER.error("I/O, security, or SFTP error processing type: " + type, e);
+                LOGGER.error("I/O, security, or SFTP error processing type: {} - {} - {}", type, e.getClass().getSimpleName(), e.getMessage());
                 throw new RuntimeException("Failed to process type: " + type, e);
             } catch (RuntimeException e) {
-                LOGGER.error("Runtime error processing type: " + type, e);
+                LOGGER.error("Runtime error processing type: {} - {} - {}", type, e.getClass().getSimpleName(), e.getMessage());
                 throw e;
             }
         }
@@ -3902,9 +4236,9 @@ public class TodoUpdBatchProcessor {
                 List<String> lines = fileService.readLines(inputFile);
                 long newBatchId = idGenerator.generateFakeDbfBatchId();
                 serviceProvider.getBookmarkService().createBookmark(todoFile, newBatchId, 
-                    inputFile.getAbsolutePath(), lines.size(), type);
+                    inputFile.getName(), lines.size(), type);
             } catch (IOException e) {
-                LOGGER.error("Failed to create bookmark for orphaned file recovery", e);
+                LOGGER.error("Failed to create bookmark for orphaned file recovery: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                 throw new RuntimeException("Failed to create bookmark for recovery", e);
             }
         }
@@ -3915,7 +4249,7 @@ public class TodoUpdBatchProcessor {
         } else {
             // In recovery scenario, we need to archive the input file on remote
             String inputFileName = inputFile.getName();
-            String inputFileArchiveName = String.format("todoapp-%s%s-input-%s.txt",
+            String inputFileArchiveName = String.format("pnidchgbat-%s%s-input-%s.txt",
                 todoFilePrefix, todoFile, 
                 timeProvider.formatCurrentDate("yyyyMMdd"));
             
@@ -3928,8 +4262,7 @@ public class TodoUpdBatchProcessor {
             String remoteSourcePath = incomingDir + "/" + inputFileName;
             String remoteArchivePath = inputArchiveDir + "/" + inputFileArchiveName;
             
-            LOGGER.info("Recovery: Attempting to archive remote file from {} to {}", 
-                remoteSourcePath, remoteArchivePath);
+            LOGGER.info("Recovery: Attempting to archive remote file to archive directory");
             
             TodoUpdBatchService todoUpdService = new TodoUpdBatchService(
                 sftpService, sftpConnection, timeProvider, fileSystemProvider, 
@@ -3960,11 +4293,11 @@ public class TodoUpdBatchProcessor {
                 }
                 
             } catch (IOException | GeneralSecurityException | SftpException e) {
-                LOGGER.error("I/O, security, or SFTP error during recovery file archiving. Recovery cannot continue without successful archiving.", e);
+                LOGGER.error("I/O, security, or SFTP error during recovery file archiving. Recovery cannot continue without successful archiving.: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                 // Don't update status if archiving failed - this preserves the correct state
                 throw new RuntimeException("Failed to archive recovery file. Cannot proceed with recovery.", e);
             } catch (RuntimeException e) {
-                LOGGER.error("Runtime error during recovery file archiving. Recovery cannot continue without successful archiving.", e);
+                LOGGER.error("Runtime error during recovery file archiving. Recovery cannot continue without successful archiving.: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                 // Don't update status if archiving failed - this preserves the correct state
                 throw e;
             }
@@ -4034,7 +4367,7 @@ public class TodoUpdBatchProcessor {
                 // Create or update bookmark
                 if (!bookmarkService.bookmarkExists()) {
                     bookmarkService.createBookmark(todoFile, batchId, 
-                        inputFile.getAbsolutePath(), records.size(), type);
+                        inputFile.getName(), records.size(), type);
                 }
                 
                 // Update status to EXAMPLE_FRAMEWORK_PROCESSING if not already in that state
@@ -4069,11 +4402,11 @@ public class TodoUpdBatchProcessor {
                     LOGGER.debug("BATCHREPORTING initialization parameters:");
                     LOGGER.debug("  App ID: {}", config.getBatchReportingApiAppId());
                     LOGGER.debug("  Batch ID: {}", batchId);
-                    LOGGER.debug("  Output Directory: {}", config.getBatchReportingApiOutputDirectory());
+                    LOGGER.debug("  Output Directory configured");
                     
                     File batchreportingOutputDir = PathValidator.validateAndCreateFile(config.getBatchReportingApiOutputDirectory());
                     LOGGER.debug("  Output Directory exists before init: {}", batchreportingOutputDir.exists());
-                    LOGGER.debug("  Output Directory absolute path: {}", batchreportingOutputDir.getAbsolutePath());
+                    LOGGER.debug("  Output Directory validation complete");
                     
                     batchreportingApiKey = batchreportingAdapter.beginFileProcessing(
                         Integer.parseInt(config.getBatchReportingApiAppId()), 
@@ -4110,7 +4443,7 @@ public class TodoUpdBatchProcessor {
                     LOGGER.debug("Initializing BATCHREPORTING with:");
                     LOGGER.debug("  App ID: {}", config.getBatchReportingApiAppId());
                     LOGGER.debug("  Batch ID: {}", batchId);
-                    LOGGER.debug("  Output Directory: {}", config.getBatchReportingApiOutputDirectory());
+                    LOGGER.debug("  Output Directory configured");
                     
                     batchreportingApiKey = batchreportingAdapter.beginFileProcessing(
                         Integer.parseInt(config.getBatchReportingApiAppId()), 
@@ -4145,9 +4478,9 @@ public class TodoUpdBatchProcessor {
             // Generate output files
             if (!startingState.isAtOrAfter(ProcessingState.OUTPUT_FILES_GENERATED)) {
                 String timestamp = timeProvider.formatCurrentDate("yyyyMMddHHmmss");
-                String comFileName = String.format("todoapp-%s%s-com-%s.txt", 
+                String comFileName = String.format("pnidchgbat-%s%s-com-%s.txt", 
                     todoFilePrefix, todoFile, timestamp);
-                String errFileName = String.format("todoapp-%s%s-err-%s.txt", 
+                String errFileName = String.format("pnidchgbat-%s%s-err-%s.txt", 
                     todoFilePrefix, todoFile, timestamp);
                 
                 // Set job end time before writing COM report
@@ -4166,7 +4499,7 @@ public class TodoUpdBatchProcessor {
             // Transfer files to remote output archive directory
             if (!startingState.isAtOrAfter(ProcessingState.OUTPUT_FILES_TRANSFERRED)) {
                 // Find the output files
-                String filePrefix = String.format("todoapp-%s%s", todoFilePrefix, todoFile);
+                String filePrefix = String.format("pnidchgbat-%s%s", todoFilePrefix, todoFile);
                 File[] outputFiles = PathValidator.validateAndCreateFile(config.getOutputDir()).listFiles(
                     (dir, name) -> name.startsWith(filePrefix));
                 
@@ -4197,9 +4530,9 @@ public class TodoUpdBatchProcessor {
                 try {
                     fileOps.deleteInputFile(inputFile);
                     safeUpdateBookmarkStatus(ProcessingState.INPUT_FILE_DELETED);
-                    LOGGER.info("Deleted input file: {}", inputFile.getName());
+                    LOGGER.info("Deleted input file for submission: {}", todoFile);
                 } catch (IOException e) {
-                    LOGGER.error("Failed to delete input file: " + inputFile.getAbsolutePath(), e);
+                    LOGGER.error("Failed to delete input file for submission: {} - {} - {}", todoFile, e.getClass().getSimpleName(), e.getMessage());
                     // Continue processing - deletion failure shouldn't stop the application
                 }
             } else {
@@ -4216,9 +4549,9 @@ public class TodoUpdBatchProcessor {
                     long endTime = System.currentTimeMillis();
                     LOGGER.debug("BATCHREPORTING endFileProcessing() completed in {} ms", (endTime - startTime));
                 } catch (IOException e) {
-                    LOGGER.error("I/O error ending BATCHREPORTING file processing", e);
+                    LOGGER.error("I/O error ending BATCHREPORTING file processing: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                 } catch (RuntimeException e) {
-                    LOGGER.error("Runtime error ending BATCHREPORTING file processing", e);
+                    LOGGER.error("Runtime error ending BATCHREPORTING file processing: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                 }
             }
             
@@ -4227,8 +4560,8 @@ public class TodoUpdBatchProcessor {
                 !startingState.isAtOrAfter(ProcessingState.BATCHREPORTING_FILES_TRANSFERRED)) {
                 
                 LOGGER.debug("Checking for BATCHREPORTING files to transfer:");
-                LOGGER.debug("  BATCHREPORTING output directory: {}", config.getBatchReportingApiOutputDirectory());
-                LOGGER.debug("  Remote BATCHREPORTING directory: {}", config.getRemoteBatchReportingOutputDirectory());
+                LOGGER.debug("  BATCHREPORTING output directory configured");
+                LOGGER.debug("  Remote BATCHREPORTING directory configured");
                 
                 boolean dirExists = fileOps.batchreportingOutputDirectoryExists(config.getBatchReportingApiOutputDirectory());
                 LOGGER.debug("  Directory exists: {}", dirExists);
@@ -4237,7 +4570,7 @@ public class TodoUpdBatchProcessor {
                     // Additional directory diagnostics
                     try {
                         File batchreportingDir = new File(config.getBatchReportingApiOutputDirectory());
-                        LOGGER.debug("  Directory absolute path: {}", batchreportingDir.getAbsolutePath());
+                        LOGGER.debug("  Directory accessible");
                         LOGGER.debug("  Directory is directory: {}", batchreportingDir.isDirectory());
                         LOGGER.debug("  Directory is readable: {}", batchreportingDir.canRead());
                         
@@ -4245,13 +4578,13 @@ public class TodoUpdBatchProcessor {
                         if (files != null) {
                             LOGGER.debug("  Number of files found: {}", files.length);
                             for (File f : files) {
-                                LOGGER.debug("    Found file: {} (size: {} bytes)", f.getName(), f.length());
+                                LOGGER.debug("    Found file (size: {} bytes)", f.length());
                             }
                         } else {
                             LOGGER.debug("  listFiles() returned null");
                         }
                     } catch (RuntimeException diagEx) {
-                        LOGGER.error("Error during directory diagnostics", diagEx);
+                        LOGGER.error("Error during directory diagnostics: {} - {}", diagEx.getClass().getSimpleName(), diagEx.getMessage());
                     }
                     
                     try {
@@ -4261,17 +4594,12 @@ public class TodoUpdBatchProcessor {
                         safeUpdateBookmarkStatus(ProcessingState.BATCHREPORTING_FILES_TRANSFERRED);
                         LOGGER.info("BATCHREPORTING files transferred");
                     } catch (SftpException | GeneralSecurityException | IOException e) {
-                        LOGGER.error("Error transferring BATCHREPORTING files from {} to {}", 
-                            config.getBatchReportingApiOutputDirectory(), 
-                            config.getRemoteBatchReportingOutputDirectory(), e);
+                        LOGGER.error("Error transferring BATCHREPORTING files to remote directory: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                     } catch (RuntimeException e) {
-                        LOGGER.error("Runtime error transferring BATCHREPORTING files from {} to {}", 
-                            config.getBatchReportingApiOutputDirectory(), 
-                            config.getRemoteBatchReportingOutputDirectory(), e);
+                        LOGGER.error("Runtime error transferring BATCHREPORTING files to remote directory: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                     }
                 } else {
-                    LOGGER.warn("BATCHREPORTING output directory does not exist or cannot be accessed: {}", 
-                        config.getBatchReportingApiOutputDirectory());
+                    LOGGER.warn("BATCHREPORTING output directory does not exist or cannot be accessed");
                 }
             }
             
@@ -4280,9 +4608,9 @@ public class TodoUpdBatchProcessor {
                 // Delete EXAMPLE_FRAMEWORK response file
                 exampleframeworkResponseFileService.deleteExampleFrameworkResponseFile(todoFile, todoFilePrefix);
             } catch (IOException e) {
-                LOGGER.warn("I/O error deleting EXAMPLE_FRAMEWORK response file", e);
+                LOGGER.warn("I/O error deleting EXAMPLE_FRAMEWORK response file: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             } catch (RuntimeException e) {
-                LOGGER.warn("Runtime error deleting EXAMPLE_FRAMEWORK response file", e);
+                LOGGER.warn("Runtime error deleting EXAMPLE_FRAMEWORK response file: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             }
             
             // Mark as completed before deleting
@@ -4301,7 +4629,7 @@ public class TodoUpdBatchProcessor {
         try {
             return serviceProvider.getTodoFileService(type).getNextTodoFile();
         } catch (TodoFileServiceException e) {
-            LOGGER.error("Failed to generate submission ID for type: " + type, e);
+            LOGGER.error("Failed to generate submission ID for type: {} - {} - {}", type, e.getClass().getSimpleName(), e.getMessage());
             throw new RuntimeException("Failed to generate submission ID for type: " + type, e);
         }
     }
@@ -4326,7 +4654,7 @@ public class TodoUpdBatchProcessor {
                            "This may be due to manual recovery or bookmark corruption.", status);
             }
         } catch (IOException e) {
-            LOGGER.error("Failed to update bookmark status to {}", status, e);
+            LOGGER.error("Failed to update bookmark status to {}: {} - {}", status, e.getClass().getSimpleName(), e.getMessage());
             // Continue processing - bookmark update failure shouldn't stop the job
         }
     }
@@ -4342,7 +4670,7 @@ public class TodoUpdBatchProcessor {
         // Check for error file to count errors
         String todoFilePrefix = bookmark.getProcessType().equals("TYPE1") ? 
             Constants.TYPE1_TODO_FILE_PREFIX : Constants.TYPE2_TODO_FILE_PREFIX;
-        String filePrefix = String.format("todoapp-%s%s", 
+        String filePrefix = String.format("pnidchgbat-%s%s", 
             todoFilePrefix, bookmark.getTodoFile());
         
         int errorCount = 0;
@@ -4356,7 +4684,7 @@ public class TodoUpdBatchProcessor {
                     List<String> errorLines = fileService.readLines(errFiles[0]);
                     errorCount = errorLines.size();
                 } catch (IOException e) {
-                    LOGGER.warn("Could not count error records during recovery", e);
+                    LOGGER.warn("Could not count error records during recovery: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                 }
             }
         }
@@ -4474,7 +4802,7 @@ public class FileSystemProvider {
     public void deleteFile(String path) throws IOException {
         File file = new File(path);
         if (file.exists() && !file.delete()) {
-            throw new IOException("Failed to delete file: " + path);
+            throw new IOException("Failed to delete file");
         }
     }
 }====================
@@ -4602,7 +4930,7 @@ public class SystemPropertyProvider {
     public String getRequiredProperty(String key) {
         String value = System.getProperty(key);
         if (value == null || value.trim().isEmpty()) {
-            throw new IllegalStateException("Required system property '" + key + "' is not set");
+            throw new IllegalStateException("Required system property is not set");
         }
         return value;
     }
@@ -4798,7 +5126,7 @@ public class RecordParser {
     private static void parseType1Type2Record(String line, TodoUpdateRecord record) {
         ValidationResult validationResult = null;
         if (line.length() != Constants.EXPECTED_TYPE1_TYPE2_RECORD_LENGTH) {
-            validationResult = new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            validationResult = new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.ALT_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.ALT_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.PRC_CNTR_TYPE1N_CD,
@@ -4826,7 +5154,7 @@ public class RecordParser {
     private static void parseType3Record(String line, TodoUpdateRecord record) {
         ValidationResult validationResult = null;
         if (line.length() != Constants.EXPECTED_TYPE3_RECORD_LENGTH) {
-            validationResult = new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            validationResult = new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.ALT_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.ALT_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.PRC_CNTR_TYPE1N_CD,
@@ -4851,7 +5179,7 @@ public class RecordParser {
     private static void parseType4Record(String line, TodoUpdateRecord record) {
         ValidationResult validationResult = null;
         if (line.length() != Constants.EXPECTED_TYPE4_RECORD_LENGTH) {
-            validationResult = new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            validationResult = new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.ALT_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.ALT_PRC_ID,
                     Constants.BatchReportingCounters.InputRecordLengthIncorrect.PRC_CNTR_TYPE1N_CD,
@@ -4907,7 +5235,7 @@ public class RecordValidator {
     private static final Set<String> ALLOWED_R_TRANSITIONS = Set.of("S", "I");
 
     /**
-     * Validates a TODO update record against business rules and checks for
+     * Validates a userIdentifier change record against business rules and checks for
      * duplicate, superseded, or reversed transtype1ions
      * @param record The record to validate
      * @param processedRecords List of previously processed records
@@ -4920,9 +5248,9 @@ public class RecordValidator {
         // Validate old PN ID (BR.3.2.2)
         if (record.getOldAdminstrId() == null || record.getOldAdminstrId().isBlank()
                 || !isNumeric(record.getOldAdminstrId())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.OldUserIdentifierIsInvalidOrMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.OldUserIdentifierIsInvalidOrMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.OldUserIdentifierIsInvalidOrMissing.PRC_CNTR_LBL_TX);
         }
@@ -4930,9 +5258,9 @@ public class RecordValidator {
         // Validate old PN ID Type Code (BR.3.2.2)
         if (record.getOldAdminstrIdType() == null || record.getOldAdminstrIdType().isBlank() 
                 || !VALID_USER_IDENTIFIER_TYPE_CODES.contains(record.getOldAdminstrIdType())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.OldUserIdentifierTypeCodeIsInvalid.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.OldUserIdentifierTypeCodeIsInvalid.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.OldUserIdentifierTypeCodeIsInvalid.PRC_CNTR_LBL_TX);
         }
@@ -4940,9 +5268,9 @@ public class RecordValidator {
         // Validate new PN ID (BR.3.2.2)
         if (record.getNewAdminstrId() == null || record.getNewAdminstrId().isBlank()
             || !isNumeric(record.getNewAdminstrId())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.NewUserIdentifierIsInvalidOrMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.NewUserIdentifierIsInvalidOrMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.NewUserIdentifierIsInvalidOrMissing.PRC_CNTR_LBL_TX);
         }
@@ -4950,9 +5278,9 @@ public class RecordValidator {
         // Validate new PN ID Type Code (BR.3.2.2)
         if (record.getNewAdminstrIdType() == null || record.getNewAdminstrIdType().isBlank()
                 || !VALID_USER_IDENTIFIER_TYPE_CODES.contains(record.getNewAdminstrIdType())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.NewUserIdentifierTypeCdIsInvalidOrMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.NewUserIdentifierTypeCdIsInvalidOrMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.NewUserIdentifierTypeCdIsInvalidOrMissing.PRC_CNTR_LBL_TX);
         }
@@ -4960,18 +5288,18 @@ public class RecordValidator {
         // Validate that old and new IDs are different (BR.3.2.3 and BR.3.2.4)
         if (record.getOldAdminstrId().equals(record.getNewAdminstrId())
                 && record.getOldAdminstrIdType().equals(record.getNewAdminstrIdType())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.OldAndNewUserIdentifierAndTypCdsIdentical.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.OldAndNewUserIdentifierAndTypCdsIdentical.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.OldAndNewUserIdentifierAndTypCdsIdentical.PRC_CNTR_LBL_TX);
         }
 
         // Validate last name (BR.3.2.2)
         if (record.getLastName() == null || record.getLastName().isBlank()) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.LastNameIsMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.LastNameIsMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.LastNameIsMissing.PRC_CNTR_LBL_TX);
         }
@@ -4979,9 +5307,9 @@ public class RecordValidator {
         // Validate transtype1ion date (BR.3.2.2)
         if (record.getTranstype1ionDate() == null || record.getTranstype1ionDate().isBlank()
                 || !isValidDate(record.getTranstype1ionDate())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.Transtype1ionDateIsInvalidOrMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.Transtype1ionDateIsInvalidOrMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.Transtype1ionDateIsInvalidOrMissing.PRC_CNTR_LBL_TX);
         }
@@ -4989,9 +5317,9 @@ public class RecordValidator {
         // Validate transtype1ion sequence ID (BR.3.2.2)
         if (record.getTranstype1ionSequenceId() == null || record.getTranstype1ionSequenceId().isBlank()
                 || !isNumeric(record.getTranstype1ionSequenceId())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.TxnSequenceIdIsInvalidOrMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.TxnSequenceIdIsInvalidOrMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.TxnSequenceIdIsInvalidOrMissing.PRC_CNTR_LBL_TX);
         }
@@ -4999,9 +5327,9 @@ public class RecordValidator {
         // Validate site ID
         if (record.getSiteId() == null || record.getSiteId().isBlank()
                 || !isNumeric(record.getSiteId())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.SiteIdIsInvalidOrMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.SiteIdIsInvalidOrMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.SiteIdIsInvalidOrMissing.PRC_CNTR_LBL_TX);
         }
@@ -5009,9 +5337,9 @@ public class RecordValidator {
         // Validate submission ID
         if (record.getTodoFile() == null || record.getTodoFile().isBlank()
                 || !isNumeric(record.getTodoFile())) {
-            return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+            return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.TodoFileIsInvalidOrMissing.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                     Constants.BatchReportingCounters.TodoFileIsInvalidOrMissing.PRC_CNTR_TYPE1N_CD,
                     Constants.BatchReportingCounters.TodoFileIsInvalidOrMissing.PRC_CNTR_LBL_TX);
         }
@@ -5019,9 +5347,9 @@ public class RecordValidator {
         // Validate ID Type Code transitions according to Appendix G
         if (record.getOldAdminstrIdType() != null && record.getNewAdminstrIdType() != null) {
             if (!isValidIdTypeTransition(record.getOldAdminstrIdType(), record.getNewAdminstrIdType())) {
-                return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.NewUserIdentifierTypeIsInvalid.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.NewUserIdentifierTypeIsInvalid.PRC_CNTR_TYPE1N_CD,
                         Constants.BatchReportingCounters.NewUserIdentifierTypeIsInvalid.PRC_CNTR_LBL_TX);
             }
@@ -5043,27 +5371,27 @@ public class RecordValidator {
 
             // Check for duplicate transtype1ion (BR.5) - A to B, then A to B again
             if (currentOldIdKey.equals(processedOldIdKey) && currentNewIdKey.equals(processedNewIdKey)) {
-                return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.Transtype1ionDuplicatedByALaterOne.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.Transtype1ionDuplicatedByALaterOne.PRC_CNTR_TYPE1N_CD,
                         Constants.BatchReportingCounters.Transtype1ionDuplicatedByALaterOne.PRC_CNTR_LBL_TX);
             }
 
             // Check for incorrect entry transtype1ion (BR.6) - X to B, then A to C
             if (currentOldIdKey.equals(processedOldIdKey) && !currentNewIdKey.equals(processedNewIdKey)) {
-                return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.Transtype1ionSupercededByALaterOne.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.Transtype1ionSupercededByALaterOne.PRC_CNTR_TYPE1N_CD,
                         Constants.BatchReportingCounters.Transtype1ionSupercededByALaterOne.PRC_CNTR_LBL_TX);
             }
 
             // Check for transtype1ion reversal (BR.7) - A to B, then B to A
             if (currentOldIdKey.equals(processedNewIdKey) && currentNewIdKey.equals(processedOldIdKey)) {
-                return new ValidationResult(false, Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                return new ValidationResult(false, Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.Transtype1ionReversedByALaterOne.ALT_PRC_ID,
-                    Constants.BatchReportingCounters.TODO_RECORD_PRC_ID,
+                    Constants.BatchReportingCounters.PNID_CHG_PRC_ID,
                         Constants.BatchReportingCounters.Transtype1ionReversedByALaterOne.PRC_CNTR_TYPE1N_CD,
                         Constants.BatchReportingCounters.Transtype1ionReversedByALaterOne.PRC_CNTR_LBL_TX);
             }
@@ -5378,8 +5706,8 @@ public class BookmarkService {
      */
     public void createBookmark(String todoFile, long batchId, String inputFile, 
                              int totalLines, String processType) throws IOException {
-        LOGGER.debug("Creating bookmark - submission: {}, batch: {}, file: {}, lines: {}, type: {}",
-            todoFile, batchId, inputFile, totalLines, processType);
+        LOGGER.debug("Creating bookmark - submission: {}, batch: {}, lines: {}, type: {}",
+            todoFile, batchId, totalLines, processType);
             
         Properties props = new Properties();
         props.setProperty("submission_id", todoFile);
@@ -5457,11 +5785,11 @@ public class BookmarkService {
     public Optional<BookmarkState> loadBookmark() {
         File bookmarkFile = PathValidator.validateAndCreateFile(bookmarkDir, BOOKMARK_FILE);
         if (!bookmarkFile.exists()) {
-            LOGGER.debug("No bookmark file found at: {}", bookmarkFile.getAbsolutePath());
+            LOGGER.debug("No bookmark file found");
             return Optional.empty();
         }
         
-        LOGGER.debug("Loading bookmark from: {}", bookmarkFile.getAbsolutePath());
+        LOGGER.debug("Loading bookmark");
         
         try (InputStream is = new FileInputStream(bookmarkFile)) {
             Properties props = new Properties();
@@ -5483,13 +5811,13 @@ public class BookmarkService {
             return Optional.of(state);
             
         } catch (IOException e) {
-            LOGGER.error("I/O error loading bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
+            LOGGER.error("I/O error loading bookmark file: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return Optional.empty();
         } catch (NumberFormatException e) {
-            LOGGER.error("Invalid number format in bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
+            LOGGER.error("Invalid number format in bookmark file: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return Optional.empty();
         } catch (RuntimeException e) {
-            LOGGER.error("Runtime error loading bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
+            LOGGER.error("Runtime error loading bookmark file: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return Optional.empty();
         }
     }
@@ -5500,10 +5828,10 @@ public class BookmarkService {
     public void deleteBookmark() throws IOException {
         File bookmarkFile = PathValidator.validateAndCreateFile(bookmarkDir, BOOKMARK_FILE);
         if (bookmarkFile.exists()) {
-            LOGGER.debug("Deleting bookmark file: {}", bookmarkFile.getAbsolutePath());
+            LOGGER.debug("Deleting bookmark file");
             if (!bookmarkFile.delete()) {
-                LOGGER.error("Failed to delete bookmark file: {}", bookmarkFile.getAbsolutePath());
-                throw new IOException("Failed to delete bookmark file: " + bookmarkFile.getAbsolutePath());
+                LOGGER.error("Failed to delete bookmark file");
+                throw new IOException("Failed to delete bookmark file");
             }
             LOGGER.info("Successfully deleted bookmark file");
         } else {
@@ -5522,19 +5850,19 @@ public class BookmarkService {
         // Ensure bookmark directory exists
         File bookmarkDirFile = PathValidator.validateAndCreateFile(bookmarkDir);
         if (!bookmarkDirFile.exists()) {
-            LOGGER.debug("Creating bookmark directory: {}", bookmarkDir);
+            LOGGER.debug("Creating bookmark directory");
             if (!bookmarkDirFile.mkdirs()) {
-                LOGGER.error("Failed to create bookmark directory: {}", bookmarkDir);
-                throw new IOException("Failed to create bookmark directory: " + bookmarkDir);
+                LOGGER.error("Failed to create bookmark directory");
+                throw new IOException("Failed to create bookmark directory");
             }
         }
         
         File bookmarkFile = PathValidator.validateAndCreateFile(bookmarkDir, BOOKMARK_FILE);
-        LOGGER.debug("Saving bookmark to: {}", bookmarkFile.getAbsolutePath());
+        LOGGER.debug("Saving bookmark");
         try (OutputStream os = new FileOutputStream(bookmarkFile)) {
-            props.store(os, "TODO Update Batch Processing Bookmark");
+            props.store(os, "UserIdentifier Change Batch Processing Bookmark");
         } catch (IOException e) {
-            LOGGER.error("Failed to save bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
+            LOGGER.error("Failed to save bookmark file: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             throw e;
         }
     }
@@ -5575,7 +5903,7 @@ public class ExampleFrameworkResponseFileService {
      * Get the EXAMPLE_FRAMEWORK response file path for a given submission ID.
      */
     public String getExampleFrameworkResponseFilePath(String todoFile, String todoFilePrefix) {
-        return outputDir + "/todoapp-" + todoFilePrefix + todoFile + "-exampleframework-responses.jsonl";
+        return outputDir + "/pnidchgbat-" + todoFilePrefix + todoFile + "-exampleframework-responses.jsonl";
     }
     
     /**
@@ -5589,9 +5917,9 @@ public class ExampleFrameworkResponseFileService {
         File outputDirFile = new File(outputDir);
         if (!outputDirFile.exists()) {
             if (!outputDirFile.mkdirs()) {
-                throw new IOException("Failed to create output directory: " + outputDir);
+                throw new IOException("Failed to create output directory");
             }
-            LOGGER.info("Created output directory: {}", outputDir);
+            LOGGER.info("Created output directory");
         }
         
         // Append to file (create if doesn't exist)
@@ -5603,11 +5931,11 @@ public class ExampleFrameworkResponseFileService {
             if (response.getLineNumber() % 50 == 0) {
                 LOGGER.info("Written {} EXAMPLE_FRAMEWORK responses to intermediate file", response.getLineNumber());
             } else {
-                LOGGER.debug("Wrote EXAMPLE_FRAMEWORK response for line {} to {}", response.getLineNumber(), filePath);
+                LOGGER.debug("Wrote EXAMPLE_FRAMEWORK response for line {} to file", response.getLineNumber());
             }
         } catch (IOException e) {
-            LOGGER.error("Failed to write EXAMPLE_FRAMEWORK response for line {} to {}", 
-                response.getLineNumber(), filePath, e);
+            LOGGER.error("Failed to write EXAMPLE_FRAMEWORK response for line {} to file: {} - {}", 
+                response.getLineNumber(), e.getClass().getSimpleName(), e.getMessage());
             throw e;
         }
     }
@@ -5621,17 +5949,17 @@ public class ExampleFrameworkResponseFileService {
         File file = PathValidator.validateAndCreateFile(filePath);
         
         if (!file.exists()) {
-            LOGGER.error("EXAMPLE_FRAMEWORK response file not found: {}. This can happen if: " +
+            LOGGER.error("EXAMPLE_FRAMEWORK response file not found for submission: {}. This can happen if: " +
                 "1) The EXAMPLE_FRAMEWORK phase was skipped or failed, " +
                 "2) The file was already processed and deleted in a previous run, " +
                 "3) Recovery is attempting to resume BATCHREPORTING processing but the intermediate file is missing", 
-                filePath);
-            throw new FileNotFoundException("EXAMPLE_FRAMEWORK response file not found: " + filePath + 
+                todoFile);
+            throw new FileNotFoundException("EXAMPLE_FRAMEWORK response file not found for submission: " + todoFile + 
                 ". The file may have been deleted after successful processing or was never created.");
         }
         
-        LOGGER.debug("Reading EXAMPLE_FRAMEWORK responses from: {} (size: {} bytes)", 
-            filePath, file.length());
+        LOGGER.debug("Reading EXAMPLE_FRAMEWORK responses from file (size: {} bytes)", 
+            file.length());
         
         List<ExampleFrameworkResponseData> responses = new ArrayList<>();
         int parseErrors = 0;
@@ -5655,21 +5983,21 @@ public class ExampleFrameworkResponseFileService {
                     }
                 } catch (IOException e) {
                     parseErrors++;
-                    LOGGER.error("I/O error parsing EXAMPLE_FRAMEWORK response at line {} in {}", lineNum, filePath, e);
+                    LOGGER.error("I/O error parsing EXAMPLE_FRAMEWORK response at line {}: {} - {}", lineNum, e.getClass().getSimpleName(), e.getMessage());
                     // Continue reading other lines
                 } catch (RuntimeException e) {
                     parseErrors++;
-                    LOGGER.error("Runtime error parsing EXAMPLE_FRAMEWORK response at line {} in {}", lineNum, filePath, e);
+                    LOGGER.error("Runtime error parsing EXAMPLE_FRAMEWORK response at line {}: {} - {}", lineNum, e.getClass().getSimpleName(), e.getMessage());
                     // Continue reading other lines
                 }
             }
         }
         
         if (parseErrors > 0) {
-            LOGGER.warn("Read {} EXAMPLE_FRAMEWORK responses from {} with {} parse errors", 
-                responses.size(), filePath, parseErrors);
+            LOGGER.warn("Read {} EXAMPLE_FRAMEWORK responses with {} parse errors", 
+                responses.size(), parseErrors);
         } else {
-            LOGGER.info("Successfully read {} EXAMPLE_FRAMEWORK responses from {}", responses.size(), filePath);
+            LOGGER.info("Successfully read {} EXAMPLE_FRAMEWORK responses", responses.size());
         }
         
         return responses;
@@ -5708,15 +6036,15 @@ public class ExampleFrameworkResponseFileService {
         
         if (file.exists()) {
             long fileSize = file.length();
-            LOGGER.debug("Deleting EXAMPLE_FRAMEWORK response file: {} (size: {} bytes)", filePath, fileSize);
+            LOGGER.debug("Deleting EXAMPLE_FRAMEWORK response file (size: {} bytes)", fileSize);
             
             if (!file.delete()) {
-                LOGGER.error("Failed to delete EXAMPLE_FRAMEWORK response file: {}", filePath);
-                throw new IOException("Failed to delete EXAMPLE_FRAMEWORK response file: " + filePath);
+                LOGGER.error("Failed to delete EXAMPLE_FRAMEWORK response file");
+                throw new IOException("Failed to delete EXAMPLE_FRAMEWORK response file");
             }
-            LOGGER.info("Successfully deleted EXAMPLE_FRAMEWORK response file: {} (was {} bytes)", filePath, fileSize);
+            LOGGER.info("Successfully deleted EXAMPLE_FRAMEWORK response file (was {} bytes)", fileSize);
         } else {
-            LOGGER.debug("No EXAMPLE_FRAMEWORK response file to delete: {}", filePath);
+            LOGGER.debug("No EXAMPLE_FRAMEWORK response file to delete");
         }
     }
     
@@ -5729,9 +6057,9 @@ public class ExampleFrameworkResponseFileService {
         boolean exists = file.exists();
         
         if (exists) {
-            LOGGER.debug("EXAMPLE_FRAMEWORK response file exists: {} (size: {} bytes)", filePath, file.length());
+            LOGGER.debug("EXAMPLE_FRAMEWORK response file exists (size: {} bytes)", file.length());
         } else {
-            LOGGER.debug("EXAMPLE_FRAMEWORK response file does not exist: {}", filePath);
+            LOGGER.debug("EXAMPLE_FRAMEWORK response file does not exist");
         }
         
         return exists;
@@ -5825,15 +6153,15 @@ public class ExampleFrameworkService {
     }
 
     /**
-     * Sends an TODO update request to EXAMPLE_FRAMEWORK.
+     * Sends an userIdentifier change request to EXAMPLE_FRAMEWORK.
      * 
-     * @param record TODO update record
+     * @param record userIdentifier change record
      * @param stopFilePath path to stop file
      * @return EXAMPLE_FRAMEWORK response
      * @throws IOException        if an I/O error occurs
      * @throws StopException      if stop file detected
      */
-    public ExchangeMessage sendTodoUpdateRequest(TodoUpdateRecord record, String stopFilePath) 
+    public ExchangeMessage sendUserIdentifierChangeRequest(TodoUpdateRecord record, String stopFilePath) 
             throws IOException, StopException {
         // Generate EXAMPLE_FRAMEWORK instruction XML
         String instructionXml = generateExampleFrameworkInstructionXml(record);
@@ -5842,9 +6170,9 @@ public class ExampleFrameworkService {
     }
 
     /**
-     * Generates EXAMPLE_FRAMEWORK instruction XML for an TODO update request.
+     * Generates EXAMPLE_FRAMEWORK instruction XML for an userIdentifier change request.
      * 
-     * @param record TODO update record
+     * @param record userIdentifier change record
      * @return EXAMPLE_FRAMEWORK instruction XML
      */
     private String generateExampleFrameworkInstructionXml(TodoUpdateRecord record) {
@@ -5912,7 +6240,7 @@ public class ExampleFrameworkService {
                 
                 // Check for STOP file
                 if (fileSystemProvider.fileExists(stopFilePath)) {
-                    LOGGER.info("Abandoning retries because stop file exists: {}", stopFilePath);
+                    LOGGER.info("Abandoning retries because stop file exists");
                     throw new StopException();
                 }
                 
@@ -6068,7 +6396,7 @@ public class RecoveryService {
         File inputFile = PathValidator.validateAndCreateFile(bookmark.getInputFile());
         
         if (!inputFile.exists()) {
-            LOGGER.warn("Input file from bookmark no longer exists: {}", inputFile.getAbsolutePath());
+            LOGGER.warn("Input file from bookmark no longer exists");
         }
         
         // Determine current state based on bookmark status and file system
@@ -6167,17 +6495,17 @@ public class RecoveryService {
      * Check for orphaned files when no bookmark exists.
      */
     private Optional<RecoveryContext> checkForOrphanedFiles(String processType) {
-        LOGGER.debug("Checking for orphaned files in: {}", config.getLocalSftpDir());
+        LOGGER.debug("Checking for orphaned files in local SFTP directory");
         
         try {
             // Check for input files in local SFTP directory
             Path localPath = PathValidator.validateAndCreatePath(config.getLocalSftpDir());
             if (!Files.exists(localPath)) {
-                LOGGER.debug("Local SFTP directory does not exist: {}", localPath);
+                LOGGER.debug("Local SFTP directory does not exist");
                 return Optional.empty();
             }
             
-            // Look for TODO update input files
+            // Look for userIdentifier change input files
             try (Stream<Path> files = Files.list(localPath)) {
                 List<File> inputFiles = files
                     .filter(path -> {
@@ -6189,7 +6517,7 @@ public class RecoveryService {
                                               !name.startsWith(".");
                         boolean matches = isFile && notTemporary;
                         if (matches) {
-                            LOGGER.debug("Found potential orphaned file: {}", name);
+                            LOGGER.debug("Found potential orphaned file");
                         }
                         return matches;
                     })
@@ -6199,8 +6527,8 @@ public class RecoveryService {
                 
                 if (!inputFiles.isEmpty()) {
                     File orphanedFile = inputFiles.get(0);
-                    LOGGER.warn("Found {} orphaned input file(s). Will process oldest: {} (modified: {})", 
-                        inputFiles.size(), orphanedFile.getName(), new Date(orphanedFile.lastModified()));
+                    LOGGER.warn("Found {} orphaned input file(s). Will process oldest (modified: {})", 
+                        inputFiles.size(), new Date(orphanedFile.lastModified()));
                     
                     // No bookmark, so we start from the beginning with this file
                     return Optional.of(new RecoveryContext(
@@ -6215,7 +6543,7 @@ public class RecoveryService {
                 }
             }
         } catch (IOException e) {
-            LOGGER.error("Error checking for orphaned files in: {}", config.getLocalSftpDir(), e);
+            LOGGER.error("Error checking for orphaned files in local SFTP directory: {} - {}", e.getClass().getSimpleName(), e.getMessage());
         }
         
         return Optional.empty();
@@ -6229,7 +6557,7 @@ public class RecoveryService {
         
         String todoFilePrefix = bookmark.getProcessType().equals("TYPE1") ? 
             Constants.TYPE1_TODO_FILE_PREFIX : Constants.TYPE2_TODO_FILE_PREFIX;
-        String filePrefix = String.format("todoapp-%s%s", 
+        String filePrefix = String.format("pnidchgbat-%s%s", 
             todoFilePrefix, bookmark.getTodoFile());
         
         // Check for output files
@@ -6243,11 +6571,11 @@ public class RecoveryService {
                 for (File file : files) {
                     if (file.getName().contains("-com-")) {
                         hasComFile = true;
-                        LOGGER.debug("Found COM file: {}", file.getName());
+                        LOGGER.debug("Found COM file for recovery");
                     }
                     if (file.getName().contains("-err-")) {
                         hasErrFile = true;
-                        LOGGER.debug("Found ERR file: {}", file.getName());
+                        LOGGER.debug("Found ERR file for recovery");
                     }
                 }
                 
@@ -6359,8 +6687,7 @@ public class TodoUpdBatchService {
         }
 
         if (doesDirectoryContainAnyFilesExcludingHiddenFiles(localSftpDirectory)) {
-            LOGGER.error("Cannot start processing new input file because local sftp directory (" + localSftpDir
-                    + ") is not empty.");
+            LOGGER.error("Cannot start processing new input file because local sftp directory is not empty");
             return false;
         }
 
@@ -6386,11 +6713,10 @@ public class TodoUpdBatchService {
 
         List<String> remoteFiles = new ArrayList<String>();
         try {
-            LOGGER.debug("Getting list of files from SFTP " + remoteInputFilePath + "/" + remoteInputFilePattern);
+            LOGGER.debug("Getting list of files from SFTP remote directory");
             remoteFiles = sftpService.listFiles(sftpConnection, remoteInputFilePath + "/" + remoteInputFilePattern);
         } catch (final SftpException | IOException | GeneralSecurityException e) {
-            LOGGER.error("Error getting list of files from SFTP " + remoteInputFilePath + "/" + remoteInputFilePattern,
-                    e);
+            LOGGER.error("Error getting list of files from SFTP remote directory: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             throw e;
         }
 
@@ -6409,14 +6735,12 @@ public class TodoUpdBatchService {
             try {
                 sftpService.get(sftpConnection, remoteFilePath, localInputFile);
             } catch (final SftpException | IOException | GeneralSecurityException e) {
-                LOGGER.error("Error getting remote file " + remoteFilePath + " using SFTP to local " + localInputFile,
-                        e);
+                LOGGER.error("Error getting remote file using SFTP: {} - {}", e.getClass().getSimpleName(), e.getMessage());
                 // Delete the remoteInputFilePath + "/" + remoteFileName
                 throw e;
             }
 
-            LOGGER.debug("Successfully transferred " + remoteInputFilePath + "/" + remoteFileName + " to local "
-                    + localInputFile);
+            LOGGER.debug("Successfully transferred remote file to local directory");
         }
 
         return Optional.ofNullable((localInputFile == null) ? null : new File(localInputFile));
@@ -6434,11 +6758,11 @@ public class TodoUpdBatchService {
         try {
             sftpService.rename(sftpConnection, sourceFilename, destinationFilename);
         } catch (final SftpException | IOException | GeneralSecurityException e) {
-            LOGGER.error("Error moving remote file " + sourceFilename + " to " + destinationFilename, e);
+            LOGGER.error("Error moving remote file: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             throw e;
         }
 
-        LOGGER.info("Successfully moved remote file " + sourceFilename + " to " + destinationFilename);
+        LOGGER.info("Successfully moved remote file");
     }
 
     public String getCurrentDateTime(final String formatStr) {
@@ -6459,7 +6783,7 @@ public class TodoUpdBatchService {
         if (files == null) {
             // This can happen if there's an I/O error or if the path exists but isn't a directory
             // Since we already checked isDirectory(), this likely indicates an I/O error
-            throw new IllegalStateException("Failed to list files in directory: " + file.getAbsolutePath());
+            throw new IllegalStateException("Failed to list files in directory");
         }
         return files.length > 0;
     }
@@ -6478,347 +6802,6 @@ public class TodoUpdBatchService {
 
     void sleep(final int sleepTime) throws InterruptedException {
         threadProvider.sleep(sleepTime);
-    }
-}====================
-
-File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/service/StartupCleanupService.java
-====================
-package com.example.todoapp.service;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Comparator;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
-import com.example.todoapp.config.TodoUpdBatchConfiguration;
-import com.example.sftplib.service.SftpService;
-import com.example.sftplib.SftpConnection;
-import com.example.sftplib.SftpException;
-import java.security.GeneralSecurityException;
-
-/**
- * Service that checks for a dangerous delete flag file at startup and clears all local directories if found.
- * This is a dangerous operation and should only be used in development or emergency situations.
- */
-public class StartupCleanupService {
-    
-    private static final Logger LOGGER = LogManager.getLogger(StartupCleanupService.class);
-    private static final String DANGEROUS_DELETE_FLAG_FILE = "_DANGEROUSLY_DELETE_ALL_LOCAL_FILES_";
-    private static final String DANGEROUS_DELETE_REMOTE_FLAG_FILE = "_DANGEROUSLY_DELETE_ALL_REMOTE_FILES_";
-    
-    private final TodoUpdBatchConfiguration config;
-    
-    public StartupCleanupService(TodoUpdBatchConfiguration config) {
-        this.config = config;
-    }
-    
-    /**
-     * Check for the dangerous delete flag file and perform cleanup if found.
-     * @return true if cleanup was performed, false otherwise
-     */
-    public boolean checkAndPerformCleanup() {
-        // Check multiple locations for the flag file
-        List<File> flagLocations = new ArrayList<>();
-        
-        // Check in current working directory
-        flagLocations.add(new File(DANGEROUS_DELETE_FLAG_FILE));
-        
-        // Check in the local SFTP directory
-        if (config.getLocalSftpDir() != null) {
-            flagLocations.add(new File(config.getLocalSftpDir(), DANGEROUS_DELETE_FLAG_FILE));
-        }
-        
-        // Check in the output directory
-        if (config.getOutputDir() != null) {
-            flagLocations.add(new File(config.getOutputDir(), DANGEROUS_DELETE_FLAG_FILE));
-        }
-        
-        // Look for the flag file in any of these locations
-        File foundFlagFile = null;
-        for (File flagFile : flagLocations) {
-            if (flagFile.exists()) {
-                foundFlagFile = flagFile;
-                LOGGER.warn("DANGEROUS DELETE FLAG FILE FOUND at: {}", flagFile.getAbsolutePath());
-                break;
-            }
-        }
-        
-        if (foundFlagFile == null) {
-            LOGGER.debug("No dangerous delete flag file found, proceeding normally");
-            return false;
-        }
-        
-        // Perform the dangerous cleanup
-        LOGGER.warn("-----------------------------------------------");
-        LOGGER.warn("PERFORMING DANGEROUS CLEANUP OF ALL LOCAL FILES");
-        LOGGER.warn("This will delete all files in configured local directories!");
-        LOGGER.warn("-----------------------------------------------");
-        
-        boolean cleanupSuccessful = true;
-        
-        // Clean up each configured directory
-        List<String> directoriesToClean = new ArrayList<>();
-        
-        if (config.getLocalSftpDir() != null) {
-            directoriesToClean.add(config.getLocalSftpDir());
-        }
-        if (config.getOutputDir() != null) {
-            directoriesToClean.add(config.getOutputDir());
-        }
-        if (config.getBookmarkDir() != null) {
-            directoriesToClean.add(config.getBookmarkDir());
-        }
-        if (config.getTodoFileFilesDir() != null) {
-            directoriesToClean.add(config.getTodoFileFilesDir());
-        }
-        if (config.getBatchReportingApiOutputDirectory() != null && config.isEnableBatchReportingApi()) {
-            directoriesToClean.add(config.getBatchReportingApiOutputDirectory());
-        }
-        
-        for (String dirPath : directoriesToClean) {
-            try {
-                cleanDirectory(dirPath);
-                LOGGER.warn("Cleaned directory: {}", dirPath);
-            } catch (IOException e) {
-                LOGGER.error("Failed to clean directory: {}", dirPath, e);
-                cleanupSuccessful = false;
-            }
-        }
-        
-        // Delete the flag file itself
-        try {
-            if (foundFlagFile.delete()) {
-                LOGGER.warn("Deleted flag file: {}", foundFlagFile.getAbsolutePath());
-            } else {
-                LOGGER.error("Failed to delete flag file: {}", foundFlagFile.getAbsolutePath());
-                cleanupSuccessful = false;
-            }
-        } catch (SecurityException e) {
-            LOGGER.error("Security error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
-            cleanupSuccessful = false;
-        } catch (RuntimeException e) {
-            LOGGER.error("Runtime error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
-            cleanupSuccessful = false;
-        }
-        
-        if (cleanupSuccessful) {
-            LOGGER.warn("DANGEROUS CLEANUP COMPLETED SUCCESSFULLY");
-        } else {
-            LOGGER.error("DANGEROUS CLEANUP COMPLETED WITH ERRORS");
-        }
-        
-        return cleanupSuccessful;
-    }
-    
-    /**
-     * Clean all files from a directory (but keep the directory itself).
-     */
-    private void cleanDirectory(String dirPath) throws IOException {
-        Path directory = Paths.get(dirPath);
-        
-        if (!Files.exists(directory)) {
-            LOGGER.debug("Directory does not exist, nothing to clean: {}", dirPath);
-            return;
-        }
-        
-        if (!Files.isDirectory(directory)) {
-            LOGGER.warn("Path is not a directory, skipping: {}", dirPath);
-            return;
-        }
-        
-        // Delete all files and subdirectories recursively
-        Files.walk(directory)
-            .sorted(Comparator.reverseOrder()) // Delete files before directories
-            .forEach(path -> {
-                if (!path.equals(directory)) { // Don't delete the directory itself
-                    try {
-                        Files.delete(path);
-                        LOGGER.debug("Deleted: {}", path);
-                    } catch (IOException e) {
-                        LOGGER.error("Failed to delete: {}", path, e);
-                    }
-                }
-            });
-    }
-    
-    /**
-     * Check for the dangerous delete remote files flag and perform cleanup if found.
-     * @param sftpService the SFTP service to use for remote operations
-     * @return true if cleanup was performed, false otherwise
-     */
-    public boolean checkAndPerformRemoteCleanup(SftpService sftpService) {
-        // Check multiple locations for the flag file
-        List<File> flagLocations = new ArrayList<>();
-        
-        // Check in current working directory
-        flagLocations.add(new File(DANGEROUS_DELETE_REMOTE_FLAG_FILE));
-        
-        // Check in the local SFTP directory
-        if (config.getLocalSftpDir() != null) {
-            flagLocations.add(new File(config.getLocalSftpDir(), DANGEROUS_DELETE_REMOTE_FLAG_FILE));
-        }
-        
-        // Check in the output directory
-        if (config.getOutputDir() != null) {
-            flagLocations.add(new File(config.getOutputDir(), DANGEROUS_DELETE_REMOTE_FLAG_FILE));
-        }
-        
-        // Look for the flag file in any of these locations
-        File foundFlagFile = null;
-        for (File flagFile : flagLocations) {
-            if (flagFile.exists()) {
-                foundFlagFile = flagFile;
-                LOGGER.warn("DANGEROUS DELETE REMOTE FILES FLAG FOUND at: {}", flagFile.getAbsolutePath());
-                break;
-            }
-        }
-        
-        if (foundFlagFile == null) {
-            LOGGER.debug("No dangerous delete remote files flag found, proceeding normally");
-            return false;
-        }
-        
-        // Perform the dangerous remote cleanup
-        LOGGER.warn("-----------------------------------------------");
-        LOGGER.warn("PERFORMING DANGEROUS CLEANUP OF ALL REMOTE FILES");
-        LOGGER.warn("This will delete all files in configured remote directories!");
-        LOGGER.warn("-----------------------------------------------");
-        
-        boolean cleanupSuccessful = true;
-        
-        // Use try-with-resources to ensure connection is properly closed
-        try (SftpConnection connection = sftpService.connect()) {
-            
-            // Clean up remote directories based on configuration
-            List<String> remoteDirectoriesToClean = new ArrayList<>();
-            
-            // TYPE1 directories
-            if (config.getType1RemoteBaseDir() != null) {
-                remoteDirectoriesToClean.add(config.getType1RemoteBaseDir() + "/incoming");
-                remoteDirectoriesToClean.add(config.getType1RemoteBaseDir() + "/input_archive");
-                remoteDirectoriesToClean.add(config.getType1RemoteBaseDir() + "/output_archive");
-            }
-            
-            // TYPE2 directories
-            if (config.getType2RemoteBaseDir() != null) {
-                remoteDirectoriesToClean.add(config.getType2RemoteBaseDir() + "/incoming");
-                remoteDirectoriesToClean.add(config.getType2RemoteBaseDir() + "/input_archive");
-                remoteDirectoriesToClean.add(config.getType2RemoteBaseDir() + "/output_archive");
-            }
-            
-            // BATCHREPORTING output directory
-            if (config.getRemoteBatchReportingOutputDirectory() != null) {
-                remoteDirectoriesToClean.add(config.getRemoteBatchReportingOutputDirectory());
-            }
-            
-            // Clean files from each remote directory
-            for (String remotePath : remoteDirectoriesToClean) {
-                try {
-                    cleanRemoteDirectory(sftpService, connection, remotePath);
-                    LOGGER.warn("Cleaned remote directory: {}", remotePath);
-                } catch (IOException | GeneralSecurityException | SftpException e) {
-                    LOGGER.error("Failed to clean remote directory: {}", remotePath, e);
-                    cleanupSuccessful = false;
-                } catch (RuntimeException e) {
-                    LOGGER.error("Runtime error cleaning remote directory: {}", remotePath, e);
-                    cleanupSuccessful = false;
-                }
-            }
-            
-        } catch (IOException | GeneralSecurityException | SftpException e) {
-            LOGGER.error("I/O, security, or SFTP error during remote cleanup", e);
-            cleanupSuccessful = false;
-        } catch (RuntimeException e) {
-            LOGGER.error("Runtime error during remote cleanup", e);
-            cleanupSuccessful = false;
-        }
-        
-        // Delete the flag file itself
-        try {
-            if (foundFlagFile.delete()) {
-                LOGGER.warn("Deleted flag file: {}", foundFlagFile.getAbsolutePath());
-            } else {
-                LOGGER.error("Failed to delete flag file: {}", foundFlagFile.getAbsolutePath());
-                cleanupSuccessful = false;
-            }
-        } catch (SecurityException e) {
-            LOGGER.error("Security error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
-            cleanupSuccessful = false;
-        } catch (RuntimeException e) {
-            LOGGER.error("Runtime error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
-            cleanupSuccessful = false;
-        }
-        
-        if (cleanupSuccessful) {
-            LOGGER.warn("DANGEROUS REMOTE CLEANUP COMPLETED SUCCESSFULLY");
-        } else {
-            LOGGER.error("DANGEROUS REMOTE CLEANUP COMPLETED WITH ERRORS");
-        }
-        
-        return cleanupSuccessful;
-    }
-    
-    /**
-     * Clean all files from a remote directory (but keep the directory itself).
-     */
-    private void cleanRemoteDirectory(SftpService sftpService, SftpConnection connection, 
-                                     String remotePath) throws IOException, GeneralSecurityException, SftpException {
-        try {
-            // List all files in the remote directory
-            List<String> files = sftpService.listFiles(connection, remotePath);
-            
-            if (files == null || files.isEmpty()) {
-                LOGGER.debug("No files found in remote directory: {}", remotePath);
-                return;
-            }
-            
-            LOGGER.info("Found {} files to delete in remote directory: {}", files.size(), remotePath);
-            
-            // Delete each file (not directories)
-            for (String file : files) {
-                // Skip directory entries
-                if (file.equals(".") || file.equals("..")) {
-                    continue;
-                }
-                
-                String fullPath = remotePath + "/" + file;
-                try {
-                    // Check if it's a directory by trying to list its contents
-                    // If it throws an exception, it's likely a file
-                    try {
-                        sftpService.listFiles(connection, fullPath);
-                        LOGGER.debug("Skipping directory: {}", fullPath);
-                        continue;
-                    } catch (IOException | GeneralSecurityException | SftpException e) {
-                        // Not a directory, proceed with deletion
-                    } catch (RuntimeException e) {
-                        // Not a directory, proceed with deletion
-                    }
-                    
-                    sftpService.delete(connection, fullPath);
-                    LOGGER.debug("Deleted remote file: {}", fullPath);
-                } catch (IOException | GeneralSecurityException | SftpException e) {
-                    LOGGER.error("Failed to delete remote file: {}", fullPath, e);
-                    throw e;
-                } catch (RuntimeException e) {
-                    LOGGER.error("Runtime error deleting remote file: {}", fullPath, e);
-                    throw e;
-                }
-            }
-        } catch (IOException | GeneralSecurityException | SftpException e) {
-            LOGGER.error("Error cleaning remote directory: {}", remotePath, e);
-            throw e;
-        } catch (RuntimeException e) {
-            LOGGER.error("Runtime error cleaning remote directory: {}", remotePath, e);
-            throw e;
-        }
     }
 }====================
 
@@ -6841,11 +6824,10 @@ import com.example.todoapp.processor.ServiceProvider;
 import com.example.todoapp.processor.TodoUpdBatchProcessor;
 import com.example.todoapp.provider.PackageInfoProvider;
 import com.example.todoapp.service.AuditService;
-import com.example.todoapp.service.StartupCleanupService;
 import com.example.todoapp.util.Utils;
 
 /**
- * Main entry point for TODO Update Batch Application.
+ * Main entry point for userIdentifier Change Batch Application.
  * 
  * Key features:
  * - All configuration centralized in TodoUpdBatchConfiguration
@@ -6868,8 +6850,8 @@ public final class TodoUpdBatchApplication {
         // Log application version as the very first thing
         PackageInfoProvider packageInfoProvider = new PackageInfoProvider();
         String version = packageInfoProvider.getImplementationVersion(TodoUpdBatchApplication.class);
-        LOGGER.info("TODO-RECORD-JOB Application main entered. Version " + version);
-        LOGGER.debug("TODOUPDATE starting...");
+        LOGGER.info("PNID-CHG-JOB Application main entered. Version {}", version);
+        LOGGER.debug("PNIDCHG starting...");
         
         ExitCode exitCode = runApplication();
         
@@ -6877,7 +6859,7 @@ public final class TodoUpdBatchApplication {
         try {
             Thread.sleep(Constants.SLEEP_SECONDS_DELAY_BEFORE_EXIT * 1000);
         } catch (InterruptedException e) {
-            LOGGER.error("Sleep while waiting for returning files was interrupted.", e);
+            LOGGER.error("Sleep while waiting for returning files was interrupted: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             // fortify: Do not rethrow exception
         }
         
@@ -6915,20 +6897,20 @@ public final class TodoUpdBatchApplication {
             // Audit application shutdown
             auditService.auditApplicationShutdown();
             
-            LOGGER.info("TODO Update Batch processing completed successfully");
+            LOGGER.info("UserIdentifier Change Batch processing completed successfully");
             return ExitCode.SUCCESS;
             
         } catch (StopException e) {
-            LOGGER.info("TODO Update Batch processing stopped by user request");
+            LOGGER.info("UserIdentifier Change Batch processing stopped by user request");
             return ExitCode.STOP_REQUESTED;
         } catch (TodoFileServiceException e) {
-            LOGGER.error("Failed to initialize submission ID service", e);
+            LOGGER.error("Failed to initialize submission ID service: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return ExitCode.CONFIGURATION_ERROR;
         } catch (IllegalArgumentException e) {
-            LOGGER.error("Configuration validation failed", e);
+            LOGGER.error("Configuration validation failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return ExitCode.CONFIGURATION_ERROR;
         } catch (RuntimeException e) {
-            LOGGER.error("Runtime error in TODO Update Batch processing", e);
+            LOGGER.error("Runtime error in UserIdentifier Change Batch processing: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return ExitCode.PROCESSING_ERROR;
         }
     }
@@ -6941,30 +6923,12 @@ public final class TodoUpdBatchApplication {
         // Log application version as the very first thing
         String version = serviceProvider.getPackageInfoProvider()
             .getImplementationVersion(TodoUpdBatchApplication.class);
-        LOGGER.info("TODO-RECORD-JOB Application main entered. Version " + version);
-        LOGGER.debug("TODOUPDATE starting...");
+        LOGGER.info("PNID-CHG-JOB Application main entered. Version {}", version);
+        LOGGER.debug("PNIDCHG starting...");
             
         // Validate configuration and create any missing directories
         ConfigurationValidator.validateConfiguration(serviceProvider.getConfig(), serviceProvider.getFileSystemProvider());
         
-        // Check for dangerous delete flag files and perform cleanup if needed
-        try {
-            StartupCleanupService cleanupService = new StartupCleanupService(serviceProvider.getConfig());
-            
-            // Check for local cleanup flag
-            if (cleanupService.checkAndPerformCleanup()) {
-                LOGGER.warn("Startup cleanup was performed. All local directories have been cleared.");
-            }
-            
-            // Check for remote cleanup flag
-            if (cleanupService.checkAndPerformRemoteCleanup(serviceProvider.getSftpService())) {
-                LOGGER.warn("Remote cleanup was performed. All remote files have been cleared.");
-            }
-        } catch (RuntimeException e) {
-            LOGGER.error("Runtime error during startup cleanup check, continuing with normal operation", e);
-            // Continue with normal operation - cleanup is optional
-        }
-            
         // Audit application start
         AuditService auditService = serviceProvider.getAuditService();
         auditService.auditApplicationStart();
@@ -6977,7 +6941,7 @@ public final class TodoUpdBatchApplication {
             processor.processAllTypes();
             
         } catch (TodoFileServiceException e) {
-            LOGGER.error("Failed to initialize submission ID service", e);
+            LOGGER.error("Failed to initialize submission ID service: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             throw e;
         } catch (StopException e) {
             LOGGER.info("Processing stopped by user request");
@@ -7008,7 +6972,7 @@ public final class TodoUpdBatchApplication {
             throw new IllegalArgumentException("batchreportingApiJdbcPassword is required");
         }
 
-        LOGGER.info("batchreportingApiJdbcUrl is " + batchreportingApiJdbcUrl);
+        LOGGER.info("Initializing BATCHREPORTING database connection");
 
         HikariDataSource batchreportingDataSource = DataSourceBuilder.create().type(HikariDataSource.class).url(batchreportingApiJdbcUrl)
                 .username(batchreportingApiJdbcUsername).password(batchreportingApiJdbcCredential)
@@ -7110,7 +7074,7 @@ public class PathValidator {
         }
         
         if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
-            throw new SecurityException("Invalid filename: " + filename);
+            throw new SecurityException("Invalid filename");
         }
     }
     
@@ -7148,7 +7112,7 @@ public class PathValidator {
         String fileCanonical = file.getCanonicalPath();
         
         if (!fileCanonical.startsWith(baseDirCanonical)) {
-            throw new SecurityException("Path traversal attempt detected: " + filePath);
+            throw new SecurityException("Path traversal attempt detected");
         }
         
         return fileCanonical;
@@ -7194,7 +7158,7 @@ public class PathValidator {
         
         // Check for path traversal attempts
         if (path.contains("..")) {
-            throw new SecurityException("Path traversal attempt detected: " + path);
+            throw new SecurityException("Path traversal attempt detected");
         }
         
         return new File(path);
@@ -7242,7 +7206,7 @@ public class PathValidator {
         
         // Check for path traversal attempts in filename
         if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
-            throw new SecurityException("Invalid filename: " + filename);
+            throw new SecurityException("Invalid filename");
         }
         
         return new File(parent, filename);
@@ -7262,7 +7226,7 @@ public class PathValidator {
         
         // Check for path traversal attempts
         if (path.contains("..")) {
-            throw new SecurityException("Path traversal attempt detected: " + path);
+            throw new SecurityException("Path traversal attempt detected");
         }
         
         return Paths.get(path);
@@ -7977,7 +7941,7 @@ class ConstantsTest {
     
     @Test
     void testBatchReportingCounters() {
-        assertEquals("36", Constants.BatchReportingCounters.TODO_RECORD_PRC_ID);
+        assertEquals("36", Constants.BatchReportingCounters.PNID_CHG_PRC_ID);
         assertEquals("12", Constants.BatchReportingCounters.UNKNOWN_ERROR_PRC_ID);
     }
     
@@ -8386,7 +8350,7 @@ public class ExampleFrameworkRetryMechanismTest {
         when(mockExampleFrameworkClient.processInstructionWithRetries(anyString())).thenReturn(mockResponse);
         
         // Type1
-        ExchangeMessage result = exampleframeworkService.sendTodoUpdateRequest(record, stopFilePath);
+        ExchangeMessage result = exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath);
         
         // Assert
         assertNotNull(result);
@@ -8420,7 +8384,7 @@ public class ExampleFrameworkRetryMechanismTest {
         when(mockTimeProvider.currentTimeMillis()).thenReturn(0L, 1000L);
         
         // Type1
-        ExchangeMessage result = exampleframeworkService.sendTodoUpdateRequest(record, stopFilePath);
+        ExchangeMessage result = exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath);
         
         // Assert
         assertNotNull(result);
@@ -8452,7 +8416,7 @@ public class ExampleFrameworkRetryMechanismTest {
         when(mockFileSystemProvider.fileExists(stopFilePath)).thenReturn(true);
         
         // Type1 & Assert - should throw StopException
-        assertThrows(StopException.class, () -> exampleframeworkService.sendTodoUpdateRequest(record, stopFilePath));
+        assertThrows(StopException.class, () -> exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath));
     }
     
     @Test
@@ -8477,7 +8441,7 @@ public class ExampleFrameworkRetryMechanismTest {
             .thenThrow(nonTransientError);
         
         // Type1
-        ExchangeMessage result = exampleframeworkService.sendTodoUpdateRequest(record, stopFilePath);
+        ExchangeMessage result = exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath);
         
         // Assert
         assertNotNull(result);
@@ -8520,7 +8484,7 @@ public class ExampleFrameworkRetryMechanismTest {
             .thenReturn(15000L); // After third retry (15 seconds)
         
         // Type1
-        ExchangeMessage result = exampleframeworkService.sendTodoUpdateRequest(record, stopFilePath);
+        ExchangeMessage result = exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath);
         
         // Assert
         assertNotNull(result);
@@ -8534,9 +8498,9 @@ public class ExampleFrameworkRetryMechanismTest {
     private TodoUpdateRecord createTestRecord() {
         TodoUpdateRecord record = new TodoUpdateRecord();
         record.setOldAdminstrId("123456789");
-        record.setOldAdminstrIdType("TODO_OBJ");
+        record.setOldAdminstrIdType("userIdentifier");
         record.setNewAdminstrId("987654321");
-        record.setNewAdminstrIdType("TODO_OBJ");
+        record.setNewAdminstrIdType("userIdentifier");
         record.setLastName("SMITH");
         record.setOriginalLine("123456789TODO_OBJ987654321TODO_OBJSMITH                                    ");
         return record;
@@ -9469,8 +9433,8 @@ public abstrtype1 class Abstrtype1ManualTest2 {
             long startingId = Long.parseLong(getSystemProperty("startingTodoFile"));
             String type1ualTodoFile = String.valueOf(startingId + 1);
             
-            // Expected pattern: todoapp-{TYPE1CODE|TYPE2CODE}{todoFile}-input-{YYYYMMDD}.txt
-            String expectedPattern = String.format("todoapp-%s%s-input-%s.txt", 
+            // Expected pattern: pnidchgbat-{TYPE1CODE|TYPE2CODE}{todoFile}-input-{YYYYMMDD}.txt
+            String expectedPattern = String.format("pnidchgbat-%s%s-input-%s.txt", 
                 todoFilePrefix, type1ualTodoFile, todayDate);
             
             List<Path> archivedFiles = Files.list(inputArchiveDir)
@@ -9485,7 +9449,7 @@ public abstrtype1 class Abstrtype1ManualTest2 {
                 List<Path> similarFiles = Files.list(inputArchiveDir)
                     .filter(p -> {
                         String name = p.getFileName().toString();
-                        return name.startsWith("todoapp-" + todoFilePrefix + type1ualTodoFile + "-input-");
+                        return name.startsWith("pnidchgbat-" + todoFilePrefix + type1ualTodoFile + "-input-");
                     })
                     .collect(Collectors.toList());
                 
@@ -9496,7 +9460,7 @@ public abstrtype1 class Abstrtype1ManualTest2 {
             }
         }
         
-        addResult(false, "✗ Input file not found in archive (expected pattern: todoapp-{prefix}{todoFile}-input-{date}.txt)");
+        addResult(false, "✗ Input file not found in archive (expected pattern: pnidchgbat-{prefix}{todoFile}-input-{date}.txt)");
         return false;
     }
     
@@ -9545,7 +9509,7 @@ public abstrtype1 class Abstrtype1ManualTest2 {
     /**
      * Verify output files (COM and ERR) with expected submission ID.
      * Note: Output files are moved to the output archive directory after processing.
-     * Looks for files starting with: todoapp-{TYPE1CODE|TYPE2CODE}{todoFile}-com- or -err-
+     * Looks for files starting with: pnidchgbat-{TYPE1CODE|TYPE2CODE}{todoFile}-com- or -err-
      * 
      * @param expectedTodoFile the submission ID to look for
      * @param expectRecordInErrFile true if the record should appear in ERR file (failed processing)
@@ -9562,8 +9526,8 @@ public abstrtype1 class Abstrtype1ManualTest2 {
             // Use helper methods to get submission ID prefix
             String todoFilePrefix = getTodoFilePrefix();
             
-            // Look for output files starting with: todoapp-{TYPE1CODE|TYPE2CODE}{todoFile}-com- or -err-
-            String filePrefix = String.format("todoapp-%s%s-", todoFilePrefix, expectedTodoFile);
+            // Look for output files starting with: pnidchgbat-{TYPE1CODE|TYPE2CODE}{todoFile}-com- or -err-
+            String filePrefix = String.format("pnidchgbat-%s%s-", todoFilePrefix, expectedTodoFile);
             
             List<Path> comFiles = Files.list(outputArchiveDir)
                 .filter(p -> {
@@ -9957,7 +9921,7 @@ public class ManualTestRunner2 {
         int failed = 0;
         
         System.out.println("\n-------------------------------------------");
-        System.out.println("TODO Update Batch - Manual Test Runner 2.0");
+        System.out.println("userIdentifier Change Batch - Manual Test Runner 2.0");
         System.out.println("-------------------------------------------");
         System.out.println("Tests to run: " + tests.size());
         
@@ -10000,7 +9964,7 @@ public class ManualTestRunner2 {
         System.out.println("  <test-base-dir>/");
         System.out.println("    successful-processing/");
         System.out.println("      system.properties     # System configuration");
-        System.out.println("      data.properties       # Test data (MYORG_ID, TODO_OBJs, etc.)");
+        System.out.println("      data.properties       # Test data (MYORG_ID, userIdentifiers, etc.)");
         System.out.println("    other-test-dir/");
         System.out.println("      system.properties");
         System.out.println("      data.properties");
@@ -10270,12 +10234,12 @@ public class PartialDirectoryStructureTest extends Abstrtype1ManualTest2 {
         }
         
         // Create test input file
-        String fromSsn = getDataProperty("FROM_USER_IDENTIFIER");
-        String toSsn = getDataProperty("TO_USER_IDENTIFIER");
+        String fromUserIdentifier = getDataProperty("FROM_USER_IDENTIFIER");
+        String toUserIdentifier = getDataProperty("TO_USER_IDENTIFIER");
         String lastName = getDataProperty("LAST_NAME");
         
         String record = String.format("%sS%sS%-26s2024010100000100000001123456", 
-            fromSsn, toSsn, lastName);
+            fromUserIdentifier, toUserIdentifier, lastName);
         
         file(baseDir + "/incoming/partial_test.txt", record);
         
@@ -10445,7 +10409,7 @@ public class RecoveryAfterInputArchiveTest extends Abstrtype1ManualTest2 {
         // Simulate the file already being in archive (not in incoming)
         String inputFileName = "archived_input.txt";
         String todoFile = getExpectedTodoFile();
-        String archiveFileName = String.format("todoapp-%s%s-input-%s.txt",
+        String archiveFileName = String.format("pnidchgbat-%s%s-input-%s.txt",
             getTodoFilePrefix(), todoFile, "20240101");
         
         // Put file directly in archive directory
@@ -10640,7 +10604,7 @@ public class RecoveryDuringExampleFrameworkProcessingTest extends Abstrtype1Manu
         // File is already archived (past that phase)
         String inputFileName = "exampleframework_processing_test.txt";
         String todoFile = getExpectedTodoFile();
-        String archiveFileName = String.format("todoapp-%s%s-input-%s.txt",
+        String archiveFileName = String.format("pnidchgbat-%s%s-input-%s.txt",
             getTodoFilePrefix(), todoFile, "20240101");
         
         file(baseDir + "/input_archive/" + archiveFileName, records.toString().trim());
@@ -10841,11 +10805,11 @@ public class RecoveryWithCorruptedBookmarkTest extends Abstrtype1ManualTest2 {
         }
         
         // Create test input file
-        String fromSsn = getDataProperty("FROM_USER_IDENTIFIER");
-        String toSsn = getDataProperty("TO_USER_IDENTIFIER");
+        String fromUserIdentifier = getDataProperty("FROM_USER_IDENTIFIER");
+        String toUserIdentifier = getDataProperty("TO_USER_IDENTIFIER");
         String lastName = getDataProperty("LAST_NAME");
         String record = String.format("%sS%sS%-26s2024010100000100000001123456", 
-            fromSsn, toSsn, lastName);
+            fromUserIdentifier, toUserIdentifier, lastName);
         
         String inputFileName = "corrupted_bookmark_test.txt";
         file(baseDir + "/incoming/" + inputFileName, record);
@@ -11058,7 +11022,7 @@ public class RecoveryWithMissingArchiveFileTest extends Abstrtype1ManualTest2 {
         // Create bookmark that references an archive file that doesn't exist
         String inputFileName = "missing_archive_test.txt";
         String todoFile = getExpectedTodoFile();
-        String archiveFileName = String.format("todoapp-%s%s-input-%s.txt",
+        String archiveFileName = String.format("pnidchgbat-%s%s-input-%s.txt",
             getTodoFilePrefix(), todoFile, "20240101");
         
         // Create bookmark pointing to archive file
@@ -11193,7 +11157,7 @@ package com.example.todoapp.manual2;
 import java.nio.file.Path;
 
 /**
- * Manual test for successful TODO update processing.
+ * Manual test for successful userIdentifier change processing.
  * Tests that valid records are processed through EXAMPLE_FRAMEWORK and result in successful database updates.
  * 
  * Expected test directory structure:
@@ -11318,13 +11282,9 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import com.example.todoapp.pojo.exampleframework.ProcessorType1ion;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
-import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
-import com.example.todoapp.pojo.exampleframework.StatusDetail;
 import com.example.todoapp.model.jsonl.JsonlProcessorType1ion;
 import com.example.todoapp.model.jsonl.JsonlStatusDetail;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
 
 class ExampleFrameworkResponseDataTest {
     
@@ -11335,9 +11295,9 @@ class ExampleFrameworkResponseDataTest {
         mockRecord = mock(TodoUpdateRecord.class);
         when(mockRecord.getOriginalLine()).thenReturn("ORIGINAL_LINE");
         when(mockRecord.getOldAdminstrId()).thenReturn("123456789");
-        when(mockRecord.getOldAdminstrIdType()).thenReturn("TODO_OBJ");
+        when(mockRecord.getOldAdminstrIdType()).thenReturn("userIdentifier");
         when(mockRecord.getNewAdminstrId()).thenReturn("987654321");
-        when(mockRecord.getNewAdminstrIdType()).thenReturn("TODO_OBJ");
+        when(mockRecord.getNewAdminstrIdType()).thenReturn("userIdentifier");
     }
     
     @Test
@@ -11361,9 +11321,9 @@ class ExampleFrameworkResponseDataTest {
         assertEquals(1, data.getLineNumber());
         assertEquals("ORIGINAL_LINE", data.getOriginalLine());
         assertEquals("123456789", data.getOldAdminstrId());
-        assertEquals("TODO_OBJ", data.getOldAdminstrIdType());
+        assertEquals("userIdentifier", data.getOldAdminstrIdType());
         assertEquals("987654321", data.getNewAdminstrId());
-        assertEquals("TODO_OBJ", data.getNewAdminstrIdType());
+        assertEquals("userIdentifier", data.getNewAdminstrIdType());
         assertTrue(data.isSuccess());
         assertEquals("0", data.getReturnReasonCode());
         assertEquals("0", data.getReturnStatusCode());
@@ -11393,9 +11353,9 @@ class ExampleFrameworkResponseDataTest {
         assertEquals(2, data.getLineNumber());
         assertEquals("ORIGINAL_LINE", data.getOriginalLine());
         assertEquals("123456789", data.getOldAdminstrId());
-        assertEquals("TODO_OBJ", data.getOldAdminstrIdType());
+        assertEquals("userIdentifier", data.getOldAdminstrIdType());
         assertEquals("987654321", data.getNewAdminstrId());
-        assertEquals("TODO_OBJ", data.getNewAdminstrIdType());
+        assertEquals("userIdentifier", data.getNewAdminstrIdType());
         assertFalse(data.isSuccess());
         assertTrue(data.isValidationError());
         assertEquals("ERR001", data.getValidationErrorCode());
@@ -11404,28 +11364,31 @@ class ExampleFrameworkResponseDataTest {
     }
     
     @Test
-    void testExchangeMessageConstructor_WithExampleFrameworkStatus() {
+    void testExchangeMessageConstructor_WithStatus() {
         ExchangeMessage response = mock(ExchangeMessage.class);
-        ExampleFrameworkStatus exampleframeworkStatus = mock(ExampleFrameworkStatus.class);
-        StatusDetail statusDetail = mock(StatusDetail.class);
-        ProcessorType1ion type1ion = mock(ProcessorType1ion.class);
+        mil.osd.myorg.todoapp.pojo.exampleframework.Status status = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Status.class);
+        mil.osd.myorg.todoapp.pojo.exampleframework.Status.StatusDetail statusDetail = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Status.StatusDetail.class);
         
-        when(response.getStatus()).thenReturn(exampleframeworkStatus);
-        when(exampleframeworkStatus.getStatusDetails()).thenReturn(Arrays.asList(statusDetail));
-        when(exampleframeworkStatus.getProcessorType1ions()).thenReturn(Arrays.asList(type1ion));
+        // Mock outputs structure for dodediPersonId and sponsorDuplicateId
+        mil.osd.myorg.todoapp.pojo.exampleframework.Outputs outputs = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.class);
+        mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrBusinessObject sponsorBusinessObject = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrBusinessObject.class);
+        mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrIdentityBusinessObject identityBusinessObject = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrIdentityBusinessObject.class);
+        
+        when(response.getStatus()).thenReturn(status);
+        when(status.getStatusDetail()).thenReturn(statusDetail);
+        when(response.getOutputs()).thenReturn(outputs);
+        when(outputs.getAdminstrBusinessObject()).thenReturn(sponsorBusinessObject);
+        when(sponsorBusinessObject.getAdminstrIdentityBusinessObject()).thenReturn(identityBusinessObject);
         
         when(statusDetail.getSystemReturnStatusCode()).thenReturn("STATUS_CODE");
         when(statusDetail.getSystemReturnCode()).thenReturn("0");
-        when(statusDetail.getExampleFrameworkExceptionMessage()).thenReturn("No error");
-        when(statusDetail.getExampleFrameworkExceptionName()).thenReturn("None");
-        when(statusDetail.getExampleFrameworkExceptionStackTrace()).thenReturn("Stack trace");
+        when(statusDetail.getSystemReturnClassText()).thenReturn("None");
+        when(statusDetail.getSystemReturnContextText()).thenReturn("No error");
         
-        when(type1ion.getProcessorType1ionCode()).thenReturn("TYPE1ION_CODE");
-        when(type1ion.getProcessorMessageDetailText()).thenReturn("Type1ion detail");
-        when(type1ion.getProcessorMessageFormatCode()).thenReturn("FORMAT_CODE");
-        when(type1ion.getProcessorName()).thenReturn("PROCESSOR_NAME");
+        when(identityBusinessObject.getDodediPersonId()).thenReturn("12345");
+        when(identityBusinessObject.getAdminstrDuplicateId()).thenReturn("67890");
         
-        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 3, response);
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 3, "0", "STATUS_CODE", "No error", response);
         
         assertEquals(3, data.getLineNumber());
         assertEquals("ORIGINAL_LINE", data.getOriginalLine());
@@ -11435,34 +11398,27 @@ class ExampleFrameworkResponseDataTest {
         assertEquals("No error", data.getErrorMessage());
         assertFalse(data.isValidationError());
         
+        // Test the new fields
+        assertEquals("12345", data.getDodediPersonId());
+        assertEquals("67890", data.getAdminstrDuplicateId());
+        
         JsonlStatusDetail jsonlStatusDetail = data.getStatusDetail();
         assertNotNull(jsonlStatusDetail);
         assertEquals("0", jsonlStatusDetail.getSystemReturnCode());
         assertEquals("STATUS_CODE", jsonlStatusDetail.getSystemReturnStatusCode());
         assertEquals("None", jsonlStatusDetail.getExampleFrameworkExceptionName());
         assertEquals("No error", jsonlStatusDetail.getExampleFrameworkExceptionMessage());
-        assertEquals("Stack trace", jsonlStatusDetail.getExampleFrameworkExceptionStackTrace());
+        assertEquals("", jsonlStatusDetail.getExampleFrameworkExceptionStackTrace());
         
         List<JsonlProcessorType1ion> jsonlType1ions = data.getProcessorType1ions();
-        assertEquals(1, jsonlType1ions.size());
-        assertEquals("TYPE1ION_CODE", jsonlType1ions.get(0).getProcessorType1ionCode());
+        assertEquals(0, jsonlType1ions.size()); // Empty list now
     }
     
     @Test
     void testExchangeMessageConstructor_NonSuccessReturnCode() {
         ExchangeMessage response = mock(ExchangeMessage.class);
-        ExampleFrameworkStatus exampleframeworkStatus = mock(ExampleFrameworkStatus.class);
-        StatusDetail statusDetail = mock(StatusDetail.class);
         
-        when(response.getStatus()).thenReturn(exampleframeworkStatus);
-        when(exampleframeworkStatus.getStatusDetails()).thenReturn(Arrays.asList(statusDetail));
-        when(exampleframeworkStatus.getProcessorType1ions()).thenReturn(null);
-        
-        when(statusDetail.getSystemReturnStatusCode()).thenReturn("ERROR");
-        when(statusDetail.getSystemReturnCode()).thenReturn("1");
-        when(statusDetail.getExampleFrameworkExceptionMessage()).thenReturn("Error occurred");
-        
-        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 4, response);
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 4, "1", "ERROR", "Error occurred", response);
         
         assertFalse(data.isSuccess());
         assertEquals("ERROR", data.getReturnReasonCode());
@@ -11471,50 +11427,26 @@ class ExampleFrameworkResponseDataTest {
     }
     
     @Test
-    void testExchangeMessageConstructor_EmptyStatusDetails() {
-        ExchangeMessage response = mock(ExchangeMessage.class);
-        ExampleFrameworkStatus exampleframeworkStatus = mock(ExampleFrameworkStatus.class);
-        
-        when(response.getStatus()).thenReturn(exampleframeworkStatus);
-        when(exampleframeworkStatus.getStatusDetails()).thenReturn(new ArrayList<>());
-        
-        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 5, response);
-        
-        assertFalse(data.isSuccess());
-        assertNull(data.getReturnReasonCode());
-        assertNull(data.getReturnStatusCode());
-    }
-    
-    @Test
-    void testExchangeMessageConstructor_NonExampleFrameworkStatus() {
-        ExchangeMessage response = mock(ExchangeMessage.class);
-        IFrameworkStatus nonExampleFrameworkStatus = mock(IFrameworkStatus.class);
-        
-        when(response.getStatus()).thenReturn(nonExampleFrameworkStatus);
-        
-        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 6, response);
-        
-        assertFalse(data.isSuccess());
-        assertFalse(data.isValidationError());
-    }
-    
-    @Test
     void testExchangeMessageConstructor_NullStatus() {
         ExchangeMessage response = mock(ExchangeMessage.class);
         when(response.getStatus()).thenReturn(null);
         
-        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 7, response);
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 7, "0", "000", "", response);
         
-        assertFalse(data.isSuccess());
+        assertTrue(data.isSuccess());
         assertFalse(data.isValidationError());
+        assertNull(data.getDodediPersonId());
+        assertNull(data.getAdminstrDuplicateId());
     }
     
     @Test
     void testExchangeMessageConstructor_NullResponse() {
-        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 8, null);
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 8, "0", "000", "", null);
         
-        assertFalse(data.isSuccess());
+        assertTrue(data.isSuccess());
         assertFalse(data.isValidationError());
+        assertNull(data.getDodediPersonId());
+        assertNull(data.getAdminstrDuplicateId());
     }
     
     @Test
@@ -11531,14 +11463,14 @@ class ExampleFrameworkResponseDataTest {
         data.setOldAdminstrId("111111111");
         assertEquals("111111111", data.getOldAdminstrId());
         
-        data.setOldAdminstrIdType("TODO_OBJ");
-        assertEquals("TODO_OBJ", data.getOldAdminstrIdType());
+        data.setOldAdminstrIdType("userIdentifier");
+        assertEquals("userIdentifier", data.getOldAdminstrIdType());
         
         data.setNewAdminstrId("222222222");
         assertEquals("222222222", data.getNewAdminstrId());
         
-        data.setNewAdminstrIdType("TODO_OBJ");
-        assertEquals("TODO_OBJ", data.getNewAdminstrIdType());
+        data.setNewAdminstrIdType("userIdentifier");
+        assertEquals("userIdentifier", data.getNewAdminstrIdType());
         
         data.setSuccess(true);
         assertTrue(data.isSuccess());
@@ -11568,9 +11500,117 @@ class ExampleFrameworkResponseDataTest {
         data.setRecord(mockRecord);
         assertEquals(mockRecord, data.getRecord());
         
+        // Test new fields
+        data.setDodediPersonId("DODEDI123");
+        assertEquals("DODEDI123", data.getDodediPersonId());
+        
+        data.setAdminstrDuplicateId("SPONSOR456");
+        assertEquals("SPONSOR456", data.getAdminstrDuplicateId());
+        
         JsonlStatusDetail statusDetail = new JsonlStatusDetail();
         data.setStatusDetail(statusDetail);
         assertEquals(statusDetail, data.getStatusDetail());
+    }
+}====================
+
+File: ./todo-record-job/src/test/java/mil/osd/myorg/todoapp/model/ExampleFrameworkResponseDataTestSimple.java
+====================
+package com.example.todoapp.model;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
+
+class ExampleFrameworkResponseDataTestSimple {
+    
+    private TodoUpdateRecord mockRecord;
+    
+    @BeforeEach
+    void setUp() {
+        mockRecord = mock(TodoUpdateRecord.class);
+        when(mockRecord.getOriginalLine()).thenReturn("ORIGINAL_LINE");
+        when(mockRecord.getOldAdminstrId()).thenReturn("123456789");
+        when(mockRecord.getOldAdminstrIdType()).thenReturn("userIdentifier");
+        when(mockRecord.getNewAdminstrId()).thenReturn("987654321");
+        when(mockRecord.getNewAdminstrIdType()).thenReturn("userIdentifier");
+    }
+    
+    @Test
+    void testNewExchangeMessageConstructor_WithOutputs() {
+        ExchangeMessage response = mock(ExchangeMessage.class);
+        
+        // Mock outputs structure for dodediPersonId and sponsorDuplicateId
+        mil.osd.myorg.todoapp.pojo.exampleframework.Outputs outputs = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.class);
+        mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrBusinessObject sponsorBusinessObject = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrBusinessObject.class);
+        mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrIdentityBusinessObject identityBusinessObject = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrIdentityBusinessObject.class);
+        
+        when(response.getOutputs()).thenReturn(outputs);
+        when(outputs.getAdminstrBusinessObject()).thenReturn(sponsorBusinessObject);
+        when(sponsorBusinessObject.getAdminstrIdentityBusinessObject()).thenReturn(identityBusinessObject);
+        when(identityBusinessObject.getDodediPersonId()).thenReturn("12345");
+        when(identityBusinessObject.getAdminstrDuplicateId()).thenReturn("67890");
+        
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 1, "0", "000", "", response);
+        
+        assertEquals(1, data.getLineNumber());
+        assertEquals("ORIGINAL_LINE", data.getOriginalLine());
+        assertTrue(data.isSuccess());
+        assertEquals("000", data.getReturnReasonCode());
+        assertEquals("0", data.getReturnStatusCode());
+        assertFalse(data.isValidationError());
+        
+        // Test the new fields we added
+        assertEquals("12345", data.getDodediPersonId());
+        assertEquals("67890", data.getAdminstrDuplicateId());
+    }
+    
+    @Test
+    void testNewExchangeMessageConstructor_NullResponse() {
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 2, "1", "501", "Error", null);
+        
+        assertFalse(data.isSuccess());
+        assertEquals("501", data.getReturnReasonCode());
+        assertEquals("1", data.getReturnStatusCode());
+        assertEquals("Error", data.getErrorMessage());
+        
+        // New fields should be null when response is null
+        assertNull(data.getDodediPersonId());
+        assertNull(data.getAdminstrDuplicateId());
+    }
+    
+    @Test
+    void testValidationErrorConstructor() {
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData(mockRecord, 3, "36", "501", "Validation failed");
+        
+        assertFalse(data.isSuccess());
+        assertTrue(data.isValidationError());
+        assertEquals("501", data.getReturnReasonCode());
+        assertEquals("36", data.getReturnStatusCode());
+        assertEquals("Validation failed", data.getErrorMessage());
+        assertEquals("Validation failed", data.getValidationDescription());
+        assertEquals("501", data.getValidationErrorCode());
+    }
+    
+    @Test
+    void testGettersAndSetters() {
+        ExampleFrameworkResponseData data = new ExampleFrameworkResponseData();
+        
+        data.setDodediPersonId("TEST123");
+        assertEquals("TEST123", data.getDodediPersonId());
+        
+        data.setAdminstrDuplicateId("SPONSOR456");
+        assertEquals("SPONSOR456", data.getAdminstrDuplicateId());
+        
+        data.setReturnStatusCode("0");
+        data.setReturnReasonCode("000");
+        data.setErrorMessage("Test");
+        
+        assertEquals("0", data.getReturnStatusCode());
+        assertEquals("000", data.getReturnReasonCode());
+        assertEquals("Test", data.getErrorMessage());
     }
 }====================
 
@@ -11687,9 +11727,20 @@ public class TodoUpdateRecordTest {
         
         String toString = record.toString();
         assertNotNull(toString);
-        assertTrue(toString.contains("123456789"));
-        assertTrue(toString.contains("987654321"));
-        assertTrue(toString.contains("JOHNSON"));
+        
+        // Test that toString is privacy-safe and contains expected non-sensitive data
+        assertTrue(toString.contains("TodoUpdateRecord{"), "toString should contain TodoUpdateRecord{");
+        assertTrue(toString.contains("oldAdminstrIdType='S'"), "toString should contain oldAdminstrIdType='S'");
+        assertTrue(toString.contains("newAdminstrIdType='S'"), "toString should contain newAdminstrIdType='S'");
+        assertTrue(toString.contains("transtype1ionDate='20240101'"), "toString should contain transtype1ionDate='20240101'");
+        assertTrue(toString.contains("transtype1ionSequenceId='000123'"), "toString should contain transtype1ionSequenceId='000123'");
+        assertTrue(toString.contains("todoFile='45678901'"), "toString should contain todoFile='45678901'");
+        assertTrue(toString.contains("siteId='12345'"), "toString should contain siteId='12345'");
+        
+        // Verify it does NOT contain PII data (userIdentifiers and last names)
+        assertFalse(toString.contains("123456789"), "toString should NOT contain userIdentifier 123456789");
+        assertFalse(toString.contains("987654321"), "toString should NOT contain userIdentifier 987654321");
+        assertFalse(toString.contains("JOHNSON"), "toString should NOT contain last name JOHNSON");
     }
     
     @Test
@@ -11926,7 +11977,7 @@ public class BatchReportingPhaseProcessorTest {
         
         // Verify error counter was added - application errors use addClientProcessCounter
         verify(mockBatchReportingAdapter).addClientProcessCounter(eq(batchreportingApiKey), 
-            eq(Constants.BatchReportingCounters.TODO_RECORD_PRC_ID + Constants.BatchReportingCounters.UnknownError.ALT_PRC_ID), 
+            eq(Constants.BatchReportingCounters.PNID_CHG_PRC_ID + Constants.BatchReportingCounters.UnknownError.ALT_PRC_ID), 
             any());
     }
     
@@ -12064,7 +12115,7 @@ public class BatchReportingPhaseProcessorTest {
         
         // Then - should add appropriate counter using addClientProcessCounter for validation errors
         verify(mockBatchReportingAdapter).addClientProcessCounter(eq(batchreportingApiKey), 
-            eq(Constants.BatchReportingCounters.TODO_RECORD_PRC_ID + Constants.BatchReportingCounters.SiteIdIsInvalidOrMissing.ALT_PRC_ID), 
+            eq(Constants.BatchReportingCounters.PNID_CHG_PRC_ID + Constants.BatchReportingCounters.SiteIdIsInvalidOrMissing.ALT_PRC_ID), 
             any());
     }
     
@@ -12189,8 +12240,8 @@ public class ExampleFrameworkPhaseProcessorTest {
         ExchangeMessage response1 = createSuccessfulResponse();
         ExchangeMessage response2 = createSuccessfulResponse();
         
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(eq(record1), any())).thenReturn(response1);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(eq(record2), any())).thenReturn(response2);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record1), any())).thenReturn(response1);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record2), any())).thenReturn(response2);
         
         // When
         ExampleFrameworkPhaseProcessor.ExampleFrameworkPhaseResult result = processor.processExampleFrameworkPhase(
@@ -12244,7 +12295,7 @@ public class ExampleFrameworkPhaseProcessorTest {
         when(mockRecordValidator.validateRecord(eq(record), eq(records))).thenReturn(null);
         
         ExchangeMessage errorResponse = createErrorResponse("2", "356");
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(eq(record), any())).thenReturn(errorResponse);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record), any())).thenReturn(errorResponse);
         
         // When
         ExampleFrameworkPhaseProcessor.ExampleFrameworkPhaseResult result = processor.processExampleFrameworkPhase(
@@ -12268,7 +12319,7 @@ public class ExampleFrameworkPhaseProcessorTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(eq(record), eq(records))).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(eq(record), any()))
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record), any()))
             .thenThrow(new StopException("Stop requested"));
         
         // When/Then
@@ -12284,7 +12335,7 @@ public class ExampleFrameworkPhaseProcessorTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(eq(record), eq(records))).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(eq(record), any()))
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record), any()))
             .thenThrow(new RuntimeException("Unexpected error"));
         
         // When
@@ -12309,7 +12360,7 @@ public class ExampleFrameworkPhaseProcessorTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(eq(record), eq(records))).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(eq(record), any()))
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record), any()))
             .thenThrow(new IOException("Retry exhausted without stop file"));
         
         // When/Then - IOException should be propagated up, not caught
@@ -12330,7 +12381,7 @@ public class ExampleFrameworkPhaseProcessorTest {
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
         ExchangeMessage successResponse = createSuccessfulResponse();
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), any())).thenReturn(successResponse);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), any())).thenReturn(successResponse);
         
         // When - starting from line 1 (skip first record)
         ExampleFrameworkPhaseProcessor.ExampleFrameworkPhaseResult result = processor.processExampleFrameworkPhase(
@@ -12343,8 +12394,8 @@ public class ExampleFrameworkPhaseProcessorTest {
         assertEquals(0, result.getErrorCount());
         
         // Should only process the second record
-        verify(mockExampleFrameworkService, times(1)).sendTodoUpdateRequest(eq(record2), any());
-        verify(mockExampleFrameworkService, never()).sendTodoUpdateRequest(eq(record1), any());
+        verify(mockExampleFrameworkService, times(1)).sendUserIdentifierChangeRequest(eq(record2), any());
+        verify(mockExampleFrameworkService, never()).sendUserIdentifierChangeRequest(eq(record1), any());
     }
     
     @Test
@@ -13274,7 +13325,7 @@ public class RecordProcessorEnhancedTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
         when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
         when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(Arrays.asList(mockStatusDetail));
         when(mockExampleFrameworkStatus.getProcessorType1ions()).thenReturn(Arrays.asList());
@@ -13295,7 +13346,7 @@ public class RecordProcessorEnhancedTest {
         assertEquals(0, result.getErrorCount());
         assertEquals(0, result.getErrorRecords().size());
         
-        verify(mockExampleFrameworkService).sendTodoUpdateRequest(record, "/stop/file");
+        verify(mockExampleFrameworkService).sendUserIdentifierChangeRequest(record, "/stop/file");
         verify(mockComReport).acceptTranstype1ion();
     }
     
@@ -13320,7 +13371,7 @@ public class RecordProcessorEnhancedTest {
         assertEquals(1, result.getErrorCount());
         assertEquals(1, result.getErrorRecords().size());
         
-        verify(mockExampleFrameworkService, never()).sendTodoUpdateRequest(any(), any());
+        verify(mockExampleFrameworkService, never()).sendUserIdentifierChangeRequest(any(), any());
         // COM report updates are handled in ProcessingCoordinator
     }
     
@@ -13331,7 +13382,7 @@ public class RecordProcessorEnhancedTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
         when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
         when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(Arrays.asList(mockStatusDetail));
         when(mockExampleFrameworkStatus.getProcessorType1ions()).thenReturn(Arrays.asList());
@@ -13362,7 +13413,7 @@ public class RecordProcessorEnhancedTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), anyString())).thenThrow(new StopException());
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenThrow(new StopException());
         
         // Type1
         assertThrows(StopException.class, () -> processor.processRecords(
@@ -13382,7 +13433,7 @@ public class RecordProcessorEnhancedTest {
         List<TodoUpdateRecord> records = Arrays.asList(record1, record2);
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
         when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
         when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(Arrays.asList(mockStatusDetail));
         when(mockExampleFrameworkStatus.getProcessorType1ions()).thenReturn(Arrays.asList());
@@ -13419,7 +13470,7 @@ public class RecordProcessorEnhancedTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
         when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
         when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(Arrays.asList(mockStatusDetail));
         when(mockStatusDetail.getSystemReturnCode()).thenReturn("0");
@@ -13534,7 +13585,7 @@ public class RecordProcessorEnhancedTest {
         processor.setExampleFrameworkResponseFileService(mockExampleFrameworkResponseFileService);
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), anyString())).thenThrow(new RuntimeException("Unexpected error"));
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenThrow(new RuntimeException("Unexpected error"));
         
         // Type1
         RecordProcessor.ProcessingResult result = processor.processRecords(
@@ -13565,7 +13616,7 @@ public class RecordProcessorEnhancedTest {
         assertEquals(0, result.getErrorCount());
         assertEquals(0, result.getErrorRecords().size());
         
-        verify(mockExampleFrameworkService, never()).sendTodoUpdateRequest(any(), any());
+        verify(mockExampleFrameworkService, never()).sendUserIdentifierChangeRequest(any(), any());
     }
     
     private TodoUpdateRecord createTestRecord(String oldId, String oldType, String newId, String newType, String lastName) {
@@ -13669,7 +13720,7 @@ public class RecordProcessorIntegrationTest {
         
         // Mock successful EXAMPLE_FRAMEWORK processing
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), any())).thenReturn(null);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), any())).thenReturn(null);
         
         // When
         RecordProcessor.ProcessingResult result = processor.processRecords(
@@ -13775,7 +13826,7 @@ public class RecordProcessorIntegrationTest {
         
         // Mock stop exception
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), any()))
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), any()))
             .thenThrow(new StopException("Stop requested"));
         
         // When/Then
@@ -13834,7 +13885,7 @@ public class RecordProcessorIntegrationTest {
         
         // Mock successful validation and EXAMPLE_FRAMEWORK processing
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(), any())).thenReturn(null);
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), any())).thenReturn(null);
         
         // When
         RecordProcessor.ProcessingResult result = processor.processRecords(
@@ -13948,7 +13999,7 @@ public class RecordProcessorTestFixed {
         when(mockRecordValidator.validateRecord(record, records)).thenReturn(null);
         
         // Mock successful EXAMPLE_FRAMEWORK response
-        doReturn(mockExampleFrameworkResponse).when(mockExampleFrameworkService).sendTodoUpdateRequest(any(TodoUpdateRecord.class), anyString());
+        doReturn(mockExampleFrameworkResponse).when(mockExampleFrameworkService).sendUserIdentifierChangeRequest(any(TodoUpdateRecord.class), anyString());
         when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
         when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(Arrays.asList(mockStatusDetail));
         when(mockExampleFrameworkStatus.getProcessorType1ions()).thenReturn(Arrays.asList());
@@ -13981,7 +14032,7 @@ public class RecordProcessorTestFixed {
         assertEquals(0, result.getErrorRecords().size());
         
         // Verify intertype1ions
-        verify(mockExampleFrameworkService).sendTodoUpdateRequest(any(TodoUpdateRecord.class), anyString());
+        verify(mockExampleFrameworkService).sendUserIdentifierChangeRequest(any(TodoUpdateRecord.class), anyString());
     }
     
     @Test
@@ -13991,7 +14042,7 @@ public class RecordProcessorTestFixed {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(record, records)).thenReturn(null);
-        doThrow(new StopException()).when(mockExampleFrameworkService).sendTodoUpdateRequest(any(TodoUpdateRecord.class), anyString());
+        doThrow(new StopException()).when(mockExampleFrameworkService).sendUserIdentifierChangeRequest(any(TodoUpdateRecord.class), anyString());
         
         // Type1 & Assert
         BatchJobReport successReport = createTestComReport();
@@ -14144,7 +14195,7 @@ public class RecordProcessorTest {
         when(mockRecordValidator.validateRecord(record, records)).thenReturn(null);
         
         // Mock successful EXAMPLE_FRAMEWORK response
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(TodoUpdateRecord.class), anyString()))
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(TodoUpdateRecord.class), anyString()))
             .thenReturn(mockExampleFrameworkResponse);
         
         // Mock EXAMPLE_FRAMEWORK status for successful response
@@ -14180,7 +14231,7 @@ public class RecordProcessorTest {
         assertEquals(0, result.getErrorRecords().size());
         
         // Verify intertype1ions
-        verify(mockExampleFrameworkService).sendTodoUpdateRequest(eq(record), anyString());
+        verify(mockExampleFrameworkService).sendUserIdentifierChangeRequest(eq(record), anyString());
         // BATCHREPORTING processing is now handled separately by TodoUpdBatchProcessor
         verify(mockBatchReportingAdapter, never()).beginTranstype1ionProcessing(any(), anyInt(), anyInt(), 
             anyString(), anyString(), anyInt(), anyString(), anyString(), anyString(), 
@@ -14228,7 +14279,7 @@ public class RecordProcessorTest {
         assertTrue(result.getErrorRecords().get(0).contains("36501"));
         
         // Verify EXAMPLE_FRAMEWORK was not called
-        verify(mockExampleFrameworkService, never()).sendTodoUpdateRequest(any(), anyString());
+        verify(mockExampleFrameworkService, never()).sendUserIdentifierChangeRequest(any(), anyString());
     }
     
     /**
@@ -14241,7 +14292,7 @@ public class RecordProcessorTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(record, records)).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(TodoUpdateRecord.class), anyString()))
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(TodoUpdateRecord.class), anyString()))
             .thenThrow(new StopException());
         
         // Type1 & Assert
@@ -14279,7 +14330,7 @@ public class RecordProcessorTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(record, records)).thenReturn(null);
-        when(mockExampleFrameworkService.sendTodoUpdateRequest(any(TodoUpdateRecord.class), anyString()))
+        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(TodoUpdateRecord.class), anyString()))
             .thenReturn(mockExampleFrameworkResponse);
         
         // Mock successful EXAMPLE_FRAMEWORK response
@@ -16077,7 +16128,7 @@ public class RecoveryServiceTest {
         when(mockBookmarkService.loadBookmark()).thenReturn(Optional.of(bookmarkState));
         
         // Mock EXAMPLE_FRAMEWORK response file exists
-        String exampleframeworkResponseFile = outputDir + "/exampleframework-responses/todoapp-A12345-exampleframework-responses.jsonl";
+        String exampleframeworkResponseFile = outputDir + "/exampleframework-responses/pnidchgbat-A12345-exampleframework-responses.jsonl";
         when(mockFileSystemProvider.fileExists(exampleframeworkResponseFile)).thenReturn(true);
         
         // Type1
@@ -16140,8 +16191,8 @@ public class RecoveryServiceTest {
         when(mockBookmarkService.loadBookmark()).thenReturn(Optional.of(bookmarkState));
         
         // Mock output files exist
-        String comFile = outputDir + "/com/todoapp-A12345.COM";
-        String errFile = outputDir + "/err/todoapp-A12345.ERR";
+        String comFile = outputDir + "/com/pnidchgbat-A12345.COM";
+        String errFile = outputDir + "/err/pnidchgbat-A12345.ERR";
         when(mockFileSystemProvider.fileExists(comFile)).thenReturn(true);
         when(mockFileSystemProvider.fileExists(errFile)).thenReturn(true);
         
