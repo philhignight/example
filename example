@@ -1055,6 +1055,55 @@ public final class Constants {
 
 }====================
 
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/ExitCode.java
+====================
+package com.example.todoapp;
+
+/**
+ * Exit codes for the TODO Update Batch Application.
+ * This enum centralizes exit code management to support Fortify compliance
+ * by avoiding System.exit() calls throughout the codebase.
+ */
+public enum ExitCode {
+    /**
+     * Successful completion of processing.
+     */
+    SUCCESS(0),
+    
+    /**
+     * Processing stopped due to stop file detection.
+     * Uses exit code 0 as this is a graceful shutdown.
+     */
+    STOP_REQUESTED(0),
+    
+    /**
+     * Configuration error such as invalid properties or 
+     * failure to initialize services.
+     */
+    CONFIGURATION_ERROR(1),
+    
+    /**
+     * Processing error during runtime such as I/O failures,
+     * network errors, or unexpected exceptions.
+     */
+    PROCESSING_ERROR(1);
+    
+    private final int code;
+    
+    ExitCode(int code) {
+        this.code = code;
+    }
+    
+    /**
+     * Get the numeric exit code for use with System.exit().
+     * 
+     * @return the exit code value
+     */
+    public int getCode() {
+        return code;
+    }
+}====================
+
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/model/ExampleFrameworkResponseData.java
 ====================
 package com.example.todoapp.model;
@@ -2024,8 +2073,12 @@ public class BatchReportingPhaseProcessor {
                     }
                 }
                 
-            } catch (Exception e) {
-                LOGGER.error("Error updating BATCHREPORTING for record at line {}", 
+            } catch (IOException e) {
+                LOGGER.error("I/O error updating BATCHREPORTING for record at line {}", 
+                    responseData.getLineNumber(), e);
+                // Continue processing other records
+            } catch (RuntimeException e) {
+                LOGGER.error("Runtime error updating BATCHREPORTING for record at line {}", 
                     responseData.getLineNumber(), e);
                 // Continue processing other records
             }
@@ -2374,18 +2427,22 @@ public class ExampleFrameworkPhaseProcessor {
                 // them up to allow proper handling (infinite retry or stop)
                 LOGGER.error("IOException during EXAMPLE_FRAMEWORK processing at line {}, propagating for retry handling", lineNumber, e);
                 throw e;
-            } catch (Exception e) {
-                // Only catch truly unexpected exceptions that aren't part of normal retry flow
-                LOGGER.error("Unexpected error processing record at line {}", lineNumber, e);
+            } catch (RuntimeException e) {
+                // Only catch runtime exceptions that aren't part of normal retry flow
+                LOGGER.error("Runtime error processing record at line {}", lineNumber, e);
                 
                 // Create error response data
                 ExampleFrameworkResponseData errorData = new ExampleFrameworkResponseData(
                     record, lineNumber,
                     "2", // System error status code
                     "999", // System error reason code
-                    "Unexpected error: " + e.getMessage()
+                    "Runtime error: " + e.getMessage()
                 );
-                responseFileService.writeExampleFrameworkResponse(errorData, todoFile, todoFilePrefix);
+                try {
+                    responseFileService.writeExampleFrameworkResponse(errorData, todoFile, todoFilePrefix);
+                } catch (IOException writeError) {
+                    LOGGER.error("Failed to write error response for runtime exception at line {}", lineNumber, writeError);
+                }
                 exampleframeworkErrors.add(new ExampleFrameworkError(record, errorData));
             }
         }
@@ -2616,9 +2673,9 @@ public class FileOperationsService {
 
         // Create COM file locally (contains BatchJobReport)
         try (BufferedWriter comWriter = new BufferedWriter(
-                fileSystemProvider.createFileWriter(new File(localOutputDirFile, comFileName)));
+                fileSystemProvider.createFileWriter(PathValidator.validateAndCreateFile(localOutputDirFile, comFileName)));
              BufferedWriter errWriter = new BufferedWriter(
-                fileSystemProvider.createFileWriter(new File(localOutputDirFile, errFileName)))) {
+                fileSystemProvider.createFileWriter(PathValidator.validateAndCreateFile(localOutputDirFile, errFileName)))) {
             
             // Write COM report content
             comWriter.write(successReportContent);
@@ -2681,7 +2738,7 @@ public class FileOperationsService {
         LOGGER.debug("  Source directory: {}", batchreportingOutputDirectory);
         LOGGER.debug("  Target directory: {}", remoteBatchReportingOutputDirectory);
         
-        File batchreportingDir = new File(batchreportingOutputDirectory);
+        File batchreportingDir = PathValidator.validateAndCreateFile(batchreportingOutputDirectory);
         LOGGER.debug("  Source directory exists: {}", batchreportingDir.exists());
         LOGGER.debug("  Source directory absolute path: {}", batchreportingDir.getAbsolutePath());
         
@@ -3651,6 +3708,7 @@ import com.example.todoapp.BatchJobReport;
 import com.example.todoapp.Constants;
 import com.example.todoapp.RecordParser;
 import com.example.todoapp.StopException;
+import com.example.todoapp.util.PathValidator;
 import com.example.todoapp.batchreporting.BatchReportingAdapter;
 import com.example.todoapp.config.TodoUpdBatchConfiguration;
 import com.example.todoapp.model.TodoUpdateRecord;
@@ -3718,8 +3776,11 @@ public class TodoUpdBatchProcessor {
             } catch (StopException e) {
                 LOGGER.info("Stop requested while processing type: {}", type);
                 throw e;
-            } catch (Exception e) {
-                LOGGER.error("Error processing type: " + type, e);
+            } catch (IOException | GeneralSecurityException e) {
+                LOGGER.error("I/O or security error processing type: " + type, e);
+                // Continue with next type
+            } catch (RuntimeException e) {
+                LOGGER.error("Runtime error processing type: " + type, e);
                 // Continue with next type
             }
         }
@@ -3729,7 +3790,7 @@ public class TodoUpdBatchProcessor {
      * Process a specific type (TYPE1 or TYPE2).
      * Core orchestration logic extrtype1ed from TodoUpdBatchApplication.
      */
-    private void processType(String type) throws StopException {
+    private void processType(String type) throws StopException, IOException, GeneralSecurityException {
         LOGGER.debug("Starting processType for type {}", type);
         
         final boolean isType1iveDuty = "TYPE1".equals(type);
@@ -3762,9 +3823,12 @@ public class TodoUpdBatchProcessor {
                     inputArchiveDir, outputArchiveDir, sftpConnection);
             } catch (StopException e) {
                 throw e;
-            } catch (Exception e) {
-                LOGGER.error("Error during recovery for type: " + type, e);
+            } catch (IOException | GeneralSecurityException | SftpException e) {
+                LOGGER.error("I/O, security, or SFTP error during recovery for type: " + type, e);
                 throw new RuntimeException("Failed during recovery for type: " + type, e);
+            } catch (RuntimeException e) {
+                LOGGER.error("Runtime error during recovery for type: " + type, e);
+                throw e;
             }
         } else {
             // Normal processing - no recovery needed
@@ -3805,9 +3869,12 @@ public class TodoUpdBatchProcessor {
                 
             } catch (StopException e) {
                 throw e;
-            } catch (Exception e) {
-                LOGGER.error("Error processing type: " + type, e);
+            } catch (IOException | GeneralSecurityException | SftpException e) {
+                LOGGER.error("I/O, security, or SFTP error processing type: " + type, e);
                 throw new RuntimeException("Failed to process type: " + type, e);
+            } catch (RuntimeException e) {
+                LOGGER.error("Runtime error processing type: " + type, e);
+                throw e;
             }
         }
     }
@@ -3892,10 +3959,14 @@ public class TodoUpdBatchProcessor {
                     LOGGER.warn("No bookmark exists to update status. This may indicate manual recovery or corrupted state.");
                 }
                 
-            } catch (Exception e) {
-                LOGGER.error("Error during recovery file archiving. Recovery cannot continue without successful archiving.", e);
+            } catch (IOException | GeneralSecurityException | SftpException e) {
+                LOGGER.error("I/O, security, or SFTP error during recovery file archiving. Recovery cannot continue without successful archiving.", e);
                 // Don't update status if archiving failed - this preserves the correct state
                 throw new RuntimeException("Failed to archive recovery file. Cannot proceed with recovery.", e);
+            } catch (RuntimeException e) {
+                LOGGER.error("Runtime error during recovery file archiving. Recovery cannot continue without successful archiving.", e);
+                // Don't update status if archiving failed - this preserves the correct state
+                throw e;
             }
         }
         
@@ -4000,7 +4071,7 @@ public class TodoUpdBatchProcessor {
                     LOGGER.debug("  Batch ID: {}", batchId);
                     LOGGER.debug("  Output Directory: {}", config.getBatchReportingApiOutputDirectory());
                     
-                    File batchreportingOutputDir = new File(config.getBatchReportingApiOutputDirectory());
+                    File batchreportingOutputDir = PathValidator.validateAndCreateFile(config.getBatchReportingApiOutputDirectory());
                     LOGGER.debug("  Output Directory exists before init: {}", batchreportingOutputDir.exists());
                     LOGGER.debug("  Output Directory absolute path: {}", batchreportingOutputDir.getAbsolutePath());
                     
@@ -4096,7 +4167,7 @@ public class TodoUpdBatchProcessor {
             if (!startingState.isAtOrAfter(ProcessingState.OUTPUT_FILES_TRANSFERRED)) {
                 // Find the output files
                 String filePrefix = String.format("todoapp-%s%s", todoFilePrefix, todoFile);
-                File[] outputFiles = new File(config.getOutputDir()).listFiles(
+                File[] outputFiles = PathValidator.validateAndCreateFile(config.getOutputDir()).listFiles(
                     (dir, name) -> name.startsWith(filePrefix));
                 
                 if (outputFiles != null && outputFiles.length >= 2) {
@@ -4144,8 +4215,10 @@ public class TodoUpdBatchProcessor {
                     batchreportingAdapter.endFileProcessing(batchreportingApiKey);
                     long endTime = System.currentTimeMillis();
                     LOGGER.debug("BATCHREPORTING endFileProcessing() completed in {} ms", (endTime - startTime));
-                } catch (Exception e) {
-                    LOGGER.error("Error ending BATCHREPORTING file processing", e);
+                } catch (IOException e) {
+                    LOGGER.error("I/O error ending BATCHREPORTING file processing", e);
+                } catch (RuntimeException e) {
+                    LOGGER.error("Runtime error ending BATCHREPORTING file processing", e);
                 }
             }
             
@@ -4177,7 +4250,7 @@ public class TodoUpdBatchProcessor {
                         } else {
                             LOGGER.debug("  listFiles() returned null");
                         }
-                    } catch (Exception diagEx) {
+                    } catch (RuntimeException diagEx) {
                         LOGGER.error("Error during directory diagnostics", diagEx);
                     }
                     
@@ -4187,8 +4260,12 @@ public class TodoUpdBatchProcessor {
                             config.getRemoteBatchReportingOutputDirectory());
                         safeUpdateBookmarkStatus(ProcessingState.BATCHREPORTING_FILES_TRANSFERRED);
                         LOGGER.info("BATCHREPORTING files transferred");
-                    } catch (Exception e) {
+                    } catch (SftpException | GeneralSecurityException | IOException e) {
                         LOGGER.error("Error transferring BATCHREPORTING files from {} to {}", 
+                            config.getBatchReportingApiOutputDirectory(), 
+                            config.getRemoteBatchReportingOutputDirectory(), e);
+                    } catch (RuntimeException e) {
+                        LOGGER.error("Runtime error transferring BATCHREPORTING files from {} to {}", 
                             config.getBatchReportingApiOutputDirectory(), 
                             config.getRemoteBatchReportingOutputDirectory(), e);
                     }
@@ -4202,8 +4279,10 @@ public class TodoUpdBatchProcessor {
             try {
                 // Delete EXAMPLE_FRAMEWORK response file
                 exampleframeworkResponseFileService.deleteExampleFrameworkResponseFile(todoFile, todoFilePrefix);
-            } catch (Exception e) {
-                LOGGER.warn("Failed to delete EXAMPLE_FRAMEWORK response file", e);
+            } catch (IOException e) {
+                LOGGER.warn("I/O error deleting EXAMPLE_FRAMEWORK response file", e);
+            } catch (RuntimeException e) {
+                LOGGER.warn("Runtime error deleting EXAMPLE_FRAMEWORK response file", e);
             }
             
             // Mark as completed before deleting
@@ -4267,7 +4346,7 @@ public class TodoUpdBatchProcessor {
             todoFilePrefix, bookmark.getTodoFile());
         
         int errorCount = 0;
-        File outputDir = new File(config.getOutputDir());
+        File outputDir = PathValidator.validateAndCreateFile(config.getOutputDir());
         if (outputDir.exists()) {
             File[] errFiles = outputDir.listFiles(
                 (dir, name) -> name.startsWith(filePrefix) && name.contains("-err-"));
@@ -4302,6 +4381,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import com.example.todoapp.util.PathValidator;
+
 /**
  * Provider for file system operations. This class can be mocked in tests
  * to avoid type1ual file system access.
@@ -4314,7 +4395,7 @@ public class FileSystemProvider {
      * @return true if file exists
      */
     public boolean fileExists(String path) {
-        return new File(path).exists();
+        return PathValidator.validateAndCreateFile(path).exists();
     }
     
     /**
@@ -4333,7 +4414,7 @@ public class FileSystemProvider {
      * @return File object
      */
     public File createFile(String path) {
-        return new File(path);
+        return PathValidator.validateAndCreateFile(path);
     }
     
     /**
@@ -5240,6 +5321,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.example.todoapp.processor.ProcessingState;
 import com.example.todoapp.provider.FileSystemProvider;
+import com.example.todoapp.util.PathValidator;
 
 /**
  * Service for managing bookmark files that track processing state.
@@ -5373,7 +5455,7 @@ public class BookmarkService {
      * Load existing bookmark if it exists.
      */
     public Optional<BookmarkState> loadBookmark() {
-        File bookmarkFile = new File(bookmarkDir, BOOKMARK_FILE);
+        File bookmarkFile = PathValidator.validateAndCreateFile(bookmarkDir, BOOKMARK_FILE);
         if (!bookmarkFile.exists()) {
             LOGGER.debug("No bookmark file found at: {}", bookmarkFile.getAbsolutePath());
             return Optional.empty();
@@ -5400,8 +5482,14 @@ public class BookmarkService {
                 state.getTotalLines(), (state.getLastCompletedLine() * 100) / Math.max(1, state.getTotalLines()));
             return Optional.of(state);
             
-        } catch (Exception e) {
-            LOGGER.error("Failed to load bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
+        } catch (IOException e) {
+            LOGGER.error("I/O error loading bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
+            return Optional.empty();
+        } catch (NumberFormatException e) {
+            LOGGER.error("Invalid number format in bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
+            return Optional.empty();
+        } catch (RuntimeException e) {
+            LOGGER.error("Runtime error loading bookmark file: {}", bookmarkFile.getAbsolutePath(), e);
             return Optional.empty();
         }
     }
@@ -5410,7 +5498,7 @@ public class BookmarkService {
      * Delete the bookmark file.
      */
     public void deleteBookmark() throws IOException {
-        File bookmarkFile = new File(bookmarkDir, BOOKMARK_FILE);
+        File bookmarkFile = PathValidator.validateAndCreateFile(bookmarkDir, BOOKMARK_FILE);
         if (bookmarkFile.exists()) {
             LOGGER.debug("Deleting bookmark file: {}", bookmarkFile.getAbsolutePath());
             if (!bookmarkFile.delete()) {
@@ -5427,12 +5515,12 @@ public class BookmarkService {
      * Check if a bookmark exists.
      */
     public boolean bookmarkExists() {
-        return new File(bookmarkDir, BOOKMARK_FILE).exists();
+        return PathValidator.validateAndCreateFile(bookmarkDir, BOOKMARK_FILE).exists();
     }
     
     private void saveBookmark(Properties props) throws IOException {
         // Ensure bookmark directory exists
-        File bookmarkDirFile = new File(bookmarkDir);
+        File bookmarkDirFile = PathValidator.validateAndCreateFile(bookmarkDir);
         if (!bookmarkDirFile.exists()) {
             LOGGER.debug("Creating bookmark directory: {}", bookmarkDir);
             if (!bookmarkDirFile.mkdirs()) {
@@ -5441,7 +5529,7 @@ public class BookmarkService {
             }
         }
         
-        File bookmarkFile = new File(bookmarkDir, BOOKMARK_FILE);
+        File bookmarkFile = PathValidator.validateAndCreateFile(bookmarkDir, BOOKMARK_FILE);
         LOGGER.debug("Saving bookmark to: {}", bookmarkFile.getAbsolutePath());
         try (OutputStream os = new FileOutputStream(bookmarkFile)) {
             props.store(os, "TODO Update Batch Processing Bookmark");
@@ -5466,6 +5554,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.example.todoapp.model.ExampleFrameworkResponseData;
+import com.example.todoapp.util.PathValidator;
 
 /**
  * Service for reading and writing EXAMPLE_FRAMEWORK response data in JSONL format.
@@ -5529,7 +5618,7 @@ public class ExampleFrameworkResponseFileService {
     public List<ExampleFrameworkResponseData> readAllExampleFrameworkResponses(String todoFile, String todoFilePrefix) 
             throws IOException {
         String filePath = getExampleFrameworkResponseFilePath(todoFile, todoFilePrefix);
-        File file = new File(filePath);
+        File file = PathValidator.validateAndCreateFile(filePath);
         
         if (!file.exists()) {
             LOGGER.error("EXAMPLE_FRAMEWORK response file not found: {}. This can happen if: " +
@@ -5564,9 +5653,13 @@ public class ExampleFrameworkResponseFileService {
                     if (lineNum % 100 == 0) {
                         LOGGER.debug("Read {} EXAMPLE_FRAMEWORK responses", lineNum);
                     }
-                } catch (Exception e) {
+                } catch (IOException e) {
                     parseErrors++;
-                    LOGGER.error("Failed to parse EXAMPLE_FRAMEWORK response at line {} in {}", lineNum, filePath, e);
+                    LOGGER.error("I/O error parsing EXAMPLE_FRAMEWORK response at line {} in {}", lineNum, filePath, e);
+                    // Continue reading other lines
+                } catch (RuntimeException e) {
+                    parseErrors++;
+                    LOGGER.error("Runtime error parsing EXAMPLE_FRAMEWORK response at line {} in {}", lineNum, filePath, e);
                     // Continue reading other lines
                 }
             }
@@ -5611,7 +5704,7 @@ public class ExampleFrameworkResponseFileService {
      */
     public void deleteExampleFrameworkResponseFile(String todoFile, String todoFilePrefix) throws IOException {
         String filePath = getExampleFrameworkResponseFilePath(todoFile, todoFilePrefix);
-        File file = new File(filePath);
+        File file = PathValidator.validateAndCreateFile(filePath);
         
         if (file.exists()) {
             long fileSize = file.length();
@@ -5632,7 +5725,7 @@ public class ExampleFrameworkResponseFileService {
      */
     public boolean exampleframeworkResponseFileExists(String todoFile, String todoFilePrefix) {
         String filePath = getExampleFrameworkResponseFilePath(todoFile, todoFilePrefix);
-        File file = new File(filePath);
+        File file = PathValidator.validateAndCreateFile(filePath);
         boolean exists = file.exists();
         
         if (exists) {
@@ -5876,6 +5969,7 @@ import com.example.todoapp.Constants;
 import com.example.todoapp.config.TodoUpdBatchConfiguration;
 import com.example.todoapp.processor.ProcessingState;
 import com.example.todoapp.provider.FileSystemProvider;
+import com.example.todoapp.util.PathValidator;
 
 /**
  * Service for determining the current processing state and recovery context.
@@ -5971,7 +6065,7 @@ public class RecoveryService {
             bookmark.getStatus(), bookmark.getLastCompletedLine(), bookmark.getTotalLines());
             
         ProcessingState currentState;
-        File inputFile = new File(bookmark.getInputFile());
+        File inputFile = PathValidator.validateAndCreateFile(bookmark.getInputFile());
         
         if (!inputFile.exists()) {
             LOGGER.warn("Input file from bookmark no longer exists: {}", inputFile.getAbsolutePath());
@@ -6077,7 +6171,7 @@ public class RecoveryService {
         
         try {
             // Check for input files in local SFTP directory
-            Path localPath = Paths.get(config.getLocalSftpDir());
+            Path localPath = PathValidator.validateAndCreatePath(config.getLocalSftpDir());
             if (!Files.exists(localPath)) {
                 LOGGER.debug("Local SFTP directory does not exist: {}", localPath);
                 return Optional.empty();
@@ -6165,7 +6259,7 @@ public class RecoveryService {
         }
         
         // Check if input file still exists
-        File inputFile = new File(bookmark.getInputFile());
+        File inputFile = PathValidator.validateAndCreateFile(bookmark.getInputFile());
         if (!inputFile.exists()) {
             LOGGER.info("Input file no longer exists, state is at least INPUT_FILE_DELETED");
             return ProcessingState.INPUT_FILE_DELETED;
@@ -6216,6 +6310,7 @@ import com.example.todoapp.provider.TimeProvider;
 import com.example.todoapp.provider.FileSystemProvider;
 import com.example.todoapp.provider.ThreadProvider;
 import com.example.todoapp.util.Utils;
+import com.example.todoapp.util.PathValidator;
 
 public class TodoUpdBatchService {
     private static final Logger LOGGER = LogManager.getLogger(TodoUpdBatchService.class);
@@ -6307,7 +6402,7 @@ public class TodoUpdBatchService {
 
             // Get the full path name of the local file (retaining the original file name)
             // Use File constructor to handle platform-specific path separators
-            File localFile = new File(localPath, new File(remoteFileName).getName());
+            File localFile = PathValidator.validateAndCreateFile(localPath, PathValidator.sanitizeFileName(remoteFileName));
             localInputFile = localFile.getPath();
             remoteFilePath = remoteInputFilePath + "/" + remoteFileName;
 
@@ -6405,6 +6500,8 @@ import org.apache.logging.log4j.Logger;
 import com.example.todoapp.config.TodoUpdBatchConfiguration;
 import com.example.sftplib.service.SftpService;
 import com.example.sftplib.SftpConnection;
+import com.example.sftplib.SftpException;
+import java.security.GeneralSecurityException;
 
 /**
  * Service that checks for a dangerous delete flag file at startup and clears all local directories if found.
@@ -6503,8 +6600,11 @@ public class StartupCleanupService {
                 LOGGER.error("Failed to delete flag file: {}", foundFlagFile.getAbsolutePath());
                 cleanupSuccessful = false;
             }
-        } catch (Exception e) {
-            LOGGER.error("Error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
+        } catch (SecurityException e) {
+            LOGGER.error("Security error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
+            cleanupSuccessful = false;
+        } catch (RuntimeException e) {
+            LOGGER.error("Runtime error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
             cleanupSuccessful = false;
         }
         
@@ -6623,14 +6723,20 @@ public class StartupCleanupService {
                 try {
                     cleanRemoteDirectory(sftpService, connection, remotePath);
                     LOGGER.warn("Cleaned remote directory: {}", remotePath);
-                } catch (Exception e) {
+                } catch (IOException | GeneralSecurityException | SftpException e) {
                     LOGGER.error("Failed to clean remote directory: {}", remotePath, e);
+                    cleanupSuccessful = false;
+                } catch (RuntimeException e) {
+                    LOGGER.error("Runtime error cleaning remote directory: {}", remotePath, e);
                     cleanupSuccessful = false;
                 }
             }
             
-        } catch (Exception e) {
-            LOGGER.error("Error during remote cleanup", e);
+        } catch (SftpException e) {
+            LOGGER.error("SFTP error during remote cleanup", e);
+            cleanupSuccessful = false;
+        } catch (RuntimeException e) {
+            LOGGER.error("Runtime error during remote cleanup", e);
             cleanupSuccessful = false;
         }
         
@@ -6642,8 +6748,11 @@ public class StartupCleanupService {
                 LOGGER.error("Failed to delete flag file: {}", foundFlagFile.getAbsolutePath());
                 cleanupSuccessful = false;
             }
-        } catch (Exception e) {
-            LOGGER.error("Error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
+        } catch (SecurityException e) {
+            LOGGER.error("Security error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
+            cleanupSuccessful = false;
+        } catch (RuntimeException e) {
+            LOGGER.error("Runtime error deleting flag file: {}", foundFlagFile.getAbsolutePath(), e);
             cleanupSuccessful = false;
         }
         
@@ -6660,7 +6769,7 @@ public class StartupCleanupService {
      * Clean all files from a remote directory (but keep the directory itself).
      */
     private void cleanRemoteDirectory(SftpService sftpService, SftpConnection connection, 
-                                     String remotePath) throws Exception {
+                                     String remotePath) throws IOException, GeneralSecurityException, SftpException {
         try {
             // List all files in the remote directory
             List<String> files = sftpService.listFiles(connection, remotePath);
@@ -6687,19 +6796,27 @@ public class StartupCleanupService {
                         sftpService.listFiles(connection, fullPath);
                         LOGGER.debug("Skipping directory: {}", fullPath);
                         continue;
-                    } catch (Exception e) {
+                    } catch (IOException | GeneralSecurityException | SftpException e) {
+                        // Not a directory, proceed with deletion
+                    } catch (RuntimeException e) {
                         // Not a directory, proceed with deletion
                     }
                     
                     sftpService.delete(connection, fullPath);
                     LOGGER.debug("Deleted remote file: {}", fullPath);
-                } catch (Exception e) {
+                } catch (IOException | GeneralSecurityException | SftpException e) {
                     LOGGER.error("Failed to delete remote file: {}", fullPath, e);
+                    throw e;
+                } catch (RuntimeException e) {
+                    LOGGER.error("Runtime error deleting remote file: {}", fullPath, e);
                     throw e;
                 }
             }
-        } catch (Exception e) {
+        } catch (IOException | GeneralSecurityException | SftpException e) {
             LOGGER.error("Error cleaning remote directory: {}", remotePath, e);
+            throw e;
+        } catch (RuntimeException e) {
+            LOGGER.error("Runtime error cleaning remote directory: {}", remotePath, e);
             throw e;
         }
     }
@@ -6708,6 +6825,8 @@ public class StartupCleanupService {
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/TodoUpdBatchApplication.java
 ====================
 package com.example.todoapp;
+
+import java.io.IOException;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -6752,6 +6871,27 @@ public final class TodoUpdBatchApplication {
         LOGGER.info("TODO-RECORD-JOB Application main entered. Version " + version);
         LOGGER.debug("TODOUPDATE starting...");
         
+        ExitCode exitCode = runApplication();
+        
+        // Delay exit for logging to work
+        try {
+            Thread.sleep(Constants.SLEEP_SECONDS_DELAY_BEFORE_EXIT * 1000);
+        } catch (InterruptedException e) {
+            LOGGER.error("Sleep while waiting for returning files was interrupted.", e);
+            // fortify: Do not rethrow exception
+        }
+        
+        // Only System.exit() call in the entire application
+        System.exit(exitCode.getCode());
+    }
+    
+    /**
+     * Run the application and return the appropriate exit code.
+     * This method contains all the application logic and exception handling.
+     * 
+     * @return ExitCode indicating the result of the application run
+     */
+    private static ExitCode runApplication() {
         try {
             // Initialize configuration from system properties
             TodoUpdBatchConfiguration config = TodoUpdBatchConfiguration.fromSystemProperties();
@@ -6776,24 +6916,20 @@ public final class TodoUpdBatchApplication {
             auditService.auditApplicationShutdown();
             
             LOGGER.info("TODO Update Batch processing completed successfully");
+            return ExitCode.SUCCESS;
             
         } catch (StopException e) {
             LOGGER.info("TODO Update Batch processing stopped by user request");
-            System.exit(0);
+            return ExitCode.STOP_REQUESTED;
         } catch (TodoFileServiceException e) {
             LOGGER.error("Failed to initialize submission ID service", e);
-            System.exit(1);
-        } catch (Exception e) {
-            LOGGER.error("Unexpected error in TODO Update Batch processing", e);
-            System.exit(1);
-        } finally {
-            // Delay exit for logging to work
-            try {
-                Thread.sleep(Constants.SLEEP_SECONDS_DELAY_BEFORE_EXIT * 1000);
-            } catch (InterruptedException e) {
-                LOGGER.error("Sleep while waiting for returning files was interrupted.", e);
-                // fortify: Do not rethrow exception
-            }
+            return ExitCode.CONFIGURATION_ERROR;
+        } catch (IllegalArgumentException e) {
+            LOGGER.error("Configuration validation failed", e);
+            return ExitCode.CONFIGURATION_ERROR;
+        } catch (RuntimeException e) {
+            LOGGER.error("Runtime error in TODO Update Batch processing", e);
+            return ExitCode.PROCESSING_ERROR;
         }
     }
     
@@ -6801,7 +6937,7 @@ public final class TodoUpdBatchApplication {
      * Alternative entry point for testing or programmatic usage.
      * Allows injection of custom ServiceProvider for full control.
      */
-    public static void run(ServiceProvider serviceProvider) throws Exception {
+    public static void run(ServiceProvider serviceProvider) throws StopException, TodoFileServiceException {
         // Log application version as the very first thing
         String version = serviceProvider.getPackageInfoProvider()
             .getImplementationVersion(TodoUpdBatchApplication.class);
@@ -6824,8 +6960,8 @@ public final class TodoUpdBatchApplication {
             if (cleanupService.checkAndPerformRemoteCleanup(serviceProvider.getSftpService())) {
                 LOGGER.warn("Remote cleanup was performed. All remote files have been cleared.");
             }
-        } catch (Exception e) {
-            LOGGER.error("Error during startup cleanup check, continuing with normal operation", e);
+        } catch (RuntimeException e) {
+            LOGGER.error("Runtime error during startup cleanup check, continuing with normal operation", e);
             // Continue with normal operation - cleanup is optional
         }
             
@@ -6840,6 +6976,12 @@ public final class TodoUpdBatchApplication {
             // Process all types (TYPE1 and TYPE2)
             processor.processAllTypes();
             
+        } catch (TodoFileServiceException e) {
+            LOGGER.error("Failed to initialize submission ID service", e);
+            throw e;
+        } catch (StopException e) {
+            LOGGER.info("Processing stopped by user request");
+            throw e;
         } finally {
             // Always audit shutdown
             auditService.auditApplicationShutdown();
@@ -6948,6 +7090,8 @@ package com.example.todoapp.util;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * Utility class for validating file paths to prevent path traversal attacks.
@@ -7034,6 +7178,116 @@ public class PathValidator {
         }
         
         return fileCanonical;
+    }
+    
+    /**
+     * Validates and creates a File object for the given path.
+     * 
+     * @param path the file path to validate and create File object for
+     * @return a File object for the validated path
+     * @throws SecurityException if the path contains invalid sequences
+     */
+    public static File validateAndCreateFile(String path) throws SecurityException {
+        if (path == null || path.isEmpty()) {
+            throw new SecurityException("Path cannot be null or empty");
+        }
+        
+        // Check for path traversal attempts
+        if (path.contains("..")) {
+            throw new SecurityException("Path traversal attempt detected: " + path);
+        }
+        
+        return new File(path);
+    }
+    
+    /**
+     * Validates and creates a File object for the given directory and filename.
+     * 
+     * @param directory the directory path
+     * @param filename the filename
+     * @return a File object for the validated path
+     * @throws SecurityException if the path contains invalid sequences
+     */
+    public static File validateAndCreateFile(String directory, String filename) throws SecurityException {
+        if (directory == null || directory.isEmpty()) {
+            throw new SecurityException("Directory path cannot be null or empty");
+        }
+        if (filename == null || filename.isEmpty()) {
+            throw new SecurityException("Filename cannot be null or empty");
+        }
+        
+        // Check for path traversal attempts
+        if (directory.contains("..") || filename.contains("..")) {
+            throw new SecurityException("Path traversal attempt detected");
+        }
+        
+        return new File(directory, filename);
+    }
+    
+    /**
+     * Validates and creates a File object for the given parent File and filename.
+     * 
+     * @param parent the parent File object
+     * @param filename the filename
+     * @return a File object for the validated path
+     * @throws SecurityException if the filename contains invalid sequences
+     */
+    public static File validateAndCreateFile(File parent, String filename) throws SecurityException {
+        if (parent == null) {
+            throw new SecurityException("Parent directory cannot be null");
+        }
+        if (filename == null || filename.isEmpty()) {
+            throw new SecurityException("Filename cannot be null or empty");
+        }
+        
+        // Check for path traversal attempts in filename
+        if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
+            throw new SecurityException("Invalid filename: " + filename);
+        }
+        
+        return new File(parent, filename);
+    }
+    
+    /**
+     * Validates and creates a Path object for the given path string.
+     * 
+     * @param path the path string to validate and create Path object for
+     * @return a Path object for the validated path
+     * @throws SecurityException if the path contains invalid sequences
+     */
+    public static Path validateAndCreatePath(String path) throws SecurityException {
+        if (path == null || path.isEmpty()) {
+            throw new SecurityException("Path cannot be null or empty");
+        }
+        
+        // Check for path traversal attempts
+        if (path.contains("..")) {
+            throw new SecurityException("Path traversal attempt detected: " + path);
+        }
+        
+        return Paths.get(path);
+    }
+    
+    /**
+     * Sanitizes a filename by removing or replacing dangerous chartype1ers.
+     * 
+     * @param filename the filename to sanitize
+     * @return the sanitized filename
+     */
+    public static String sanitizeFileName(String filename) {
+        if (filename == null || filename.isEmpty()) {
+            return filename;
+        }
+        
+        // Extrtype1 just the filename part (remove any path components)
+        File file = new File(filename);
+        String sanitized = file.getName();
+        
+        // Remove any remaining dangerous chartype1ers
+        sanitized = sanitized.replaceAll("[.]{2,}", ".");
+        sanitized = sanitized.replaceAll("[/\\\\]", "_");
+        
+        return sanitized;
     }
 }====================
 
