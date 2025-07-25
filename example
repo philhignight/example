@@ -1115,6 +1115,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
+import com.example.todoapp.pojo.exampleframework.IFrameworkStatusDetail;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.model.jsonl.JsonlProcessorType1ion;
 import com.example.todoapp.model.jsonl.JsonlStatusDetail;
@@ -1185,6 +1186,38 @@ public class ExampleFrameworkResponseData {
     // Default constructor for Jackson
     public ExampleFrameworkResponseData() {}
     
+    // Constructor for backward compatibility with tests
+    public ExampleFrameworkResponseData(TodoUpdateRecord record, int lineNumber, boolean success, 
+                          String returnStatusCode, String returnReasonCode, 
+                          List<mil.osd.myorg.todoapp.pojo.exampleframework.ProcessorType1ion> type1ions) {
+        this.lineNumber = lineNumber;
+        this.originalLine = record.getOriginalLine();
+        this.oldAdminstrId = record.getOldAdminstrId();
+        this.oldAdminstrIdType = record.getOldAdminstrIdType();
+        this.newAdminstrId = record.getNewAdminstrId();
+        this.newAdminstrIdType = record.getNewAdminstrIdType();
+        this.record = record;
+        this.success = success;
+        this.returnStatusCode = returnStatusCode;
+        this.returnReasonCode = returnReasonCode;
+        this.validationError = false;
+        this.errorMessage = "";
+        
+        // Convert ProcessorType1ions to JsonlProcessorType1ions
+        if (type1ions != null) {
+            this.processorType1ions = type1ions.stream()
+                .map(type1ion -> {
+                    JsonlProcessorType1ion jsonlType1ion = new JsonlProcessorType1ion();
+                    jsonlType1ion.setProcessorType1ionCode(type1ion.getProcessorType1ionCode());
+                    jsonlType1ion.setProcessorMessageDetailText(type1ion.getProcessorMessageDetailText());
+                    jsonlType1ion.setProcessorMessageFormatCode(type1ion.getProcessorMessageFormatCode());
+                    jsonlType1ion.setProcessorName(type1ion.getProcessorName());
+                    return jsonlType1ion;
+                })
+                .collect(Collectors.toList());
+        }
+    }
+    
     
     // Constructor for validation error
     public ExampleFrameworkResponseData(TodoUpdateRecord record, int lineNumber, String returnStatusCode, 
@@ -1240,7 +1273,7 @@ public class ExampleFrameworkResponseData {
             
             // Create JSONL status detail for logging/debugging from new status structure
             if (response.getStatus() != null && response.getStatus().getStatusDetail() != null) {
-                mil.osd.myorg.todoapp.pojo.exampleframework.Status.StatusDetail statusDetail = response.getStatus().getStatusDetail();
+                IFrameworkStatusDetail statusDetail = response.getStatus().getStatusDetail();
                 this.statusDetail = new JsonlStatusDetail();
                 this.statusDetail.setSystemReturnCode(statusDetail.getSystemReturnCode());
                 this.statusDetail.setSystemReturnStatusCode(statusDetail.getSystemReturnStatusCode());
@@ -1660,8 +1693,6 @@ import java.util.List;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
 
 public class ExampleFrameworkStatus implements IFrameworkStatus {
 
@@ -1695,6 +1726,29 @@ public class ExampleFrameworkStatus implements IFrameworkStatus {
         }
         return processorType1ions;
     }
+    
+    @Override
+    public IFrameworkStatusDetail getStatusDetail() {
+        List<StatusDetail> details = getStatusDetails();
+        return details.isEmpty() ? null : details.get(0);
+    }
+}====================
+
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/IExchangeMessage.java
+====================
+package com.example.todoapp.pojo.exampleframework;
+
+/**
+ * Internal interface for instruction bean from EXAMPLE_FRAMEWORK responses.
+ * Replaces the external mybatchscheduler library dependency.
+ */
+public interface IExchangeMessage {
+    
+    /**
+     * Gets the status of the instruction.
+     * @return the status object
+     */
+    IFrameworkStatus getStatus();
 }====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/ExchangeMessage.java
@@ -1704,7 +1758,6 @@ package com.example.todoapp.pojo.exampleframework;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IExchangeMessage;
 
 /**
  * Root class for EXAMPLE_FRAMEWORK XML response deserialization.
@@ -1744,7 +1797,8 @@ public class ExchangeMessage implements IExchangeMessage {
     public Outputs getOutputs() { return outputs; }
     public void setOutputs(Outputs outputs) { this.outputs = outputs; }
     
-    public Status getStatus() { return status; }
+    @Override
+    public IFrameworkStatus getStatus() { return status; }
     public void setStatus(Status status) { this.status = status; }
     
     /**
@@ -1881,6 +1935,85 @@ public class ExchangeMessage implements IExchangeMessage {
         public String getPersonTypeCode() { return personTypeCode; }
         public void setPersonTypeCode(String personTypeCode) { this.personTypeCode = personTypeCode; }
     }
+}====================
+
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/IFrameworkStatusDetail.java
+====================
+package com.example.todoapp.pojo.exampleframework;
+
+/**
+ * Internal interface for status detail information from EXAMPLE_FRAMEWORK responses.
+ * Replaces the external mybatchscheduler library dependency.
+ */
+public interface IFrameworkStatusDetail {
+    
+    /**
+     * Gets the system return code.
+     * @return the system return code
+     */
+    String getSystemReturnCode();
+    
+    /**
+     * Gets the system return status code.
+     * @return the system return status code
+     */
+    String getSystemReturnStatusCode();
+    
+    /**
+     * Gets the EXAMPLE_FRAMEWORK exception name/class.
+     * @return the exception name or null if none
+     */
+    String getExampleFrameworkExceptionName();
+    
+    /**
+     * Gets the EXAMPLE_FRAMEWORK exception message.
+     * @return the exception message or null if none
+     */
+    String getExampleFrameworkExceptionMessage();
+    
+    /**
+     * Gets the EXAMPLE_FRAMEWORK exception stack trace.
+     * @return the stack trace or empty string if none
+     */
+    String getExampleFrameworkExceptionStackTrace();
+    
+    /**
+     * Gets the system return class text.
+     * @return the system return class text
+     */
+    String getSystemReturnClassText();
+    
+    /**
+     * Gets the system return context text.
+     * @return the system return context text
+     */
+    String getSystemReturnContextText();
+}====================
+
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/IFrameworkStatus.java
+====================
+package com.example.todoapp.pojo.exampleframework;
+
+import java.util.List;
+
+/**
+ * Internal interface for status information from EXAMPLE_FRAMEWORK responses.
+ * Replaces the external mybatchscheduler library dependency.
+ */
+public interface IFrameworkStatus {
+    
+    /**
+     * Gets the list of status details.
+     * @param <T> the type of status detail extending IFrameworkStatusDetail
+     * @return list of status details
+     */
+    <T extends IFrameworkStatusDetail> List<T> getStatusDetails();
+    
+    /**
+     * Gets the single status detail (for XML structure compatibility).
+     * @return the status detail or null if none
+     */
+    IFrameworkStatusDetail getStatusDetail();
 }====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/Outputs.java
@@ -2146,7 +2279,6 @@ File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframewor
 ====================
 package com.example.todoapp.pojo.exampleframework;
 
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
 
 /*
 <subject name="StatusDetail" id="8" database="" table="" instruction-section="status" processor-name=""
@@ -2191,8 +2323,21 @@ public class StatusDetail implements IFrameworkStatusDetail {
         return exampleframeworkExceptionMessage;
     }
 
+    @Override
     public String getExampleFrameworkExceptionStackTrace() {
         return exampleframeworkExceptionStackTrace;
+    }
+    
+    @Override
+    public String getSystemReturnClassText() {
+        // This field is not part of the standalone StatusDetail, return empty string
+        return "";
+    }
+    
+    @Override
+    public String getSystemReturnContextText() {
+        // This field is not part of the standalone StatusDetail, return empty string
+        return "";
     }
 }
 ====================
@@ -2202,8 +2347,6 @@ File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframewor
 package com.example.todoapp.pojo.exampleframework;
 
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
 import java.util.List;
 import java.util.Arrays;
 
@@ -2220,6 +2363,7 @@ public class Status implements IFrameworkStatus {
     public Status() {}
     
     // Getters and setters
+    @Override
     public StatusDetail getStatusDetail() { return statusDetail; }
     public void setStatusDetail(StatusDetail statusDetail) { this.statusDetail = statusDetail; }
     
@@ -2252,15 +2396,19 @@ public class Status implements IFrameworkStatus {
         public StatusDetail() {}
         
         // Getters and setters
+        @Override
         public String getSystemReturnClassText() { return systemReturnClassText; }
         public void setSystemReturnClassText(String systemReturnClassText) { this.systemReturnClassText = systemReturnClassText; }
         
+        @Override
         public String getSystemReturnCode() { return systemReturnCode; }
         public void setSystemReturnCode(String systemReturnCode) { this.systemReturnCode = systemReturnCode; }
         
+        @Override
         public String getSystemReturnContextText() { return systemReturnContextText; }
         public void setSystemReturnContextText(String systemReturnContextText) { this.systemReturnContextText = systemReturnContextText; }
         
+        @Override
         public String getSystemReturnStatusCode() { return systemReturnStatusCode; }
         public void setSystemReturnStatusCode(String systemReturnStatusCode) { this.systemReturnStatusCode = systemReturnStatusCode; }
         
@@ -2277,6 +2425,7 @@ public class Status implements IFrameworkStatus {
             return systemReturnClassText;
         }
         
+        @Override
         public String getExampleFrameworkExceptionStackTrace() {
             // Our XML structure doesn't include stack traces, return empty string
             return "";
@@ -2305,7 +2454,6 @@ import com.example.todoapp.provider.IdGenerator;
 import com.example.todoapp.service.BookmarkService;
 import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.util.Utils;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
 
 /**
  * Handles the BATCHREPORTING phase of record processing.
@@ -2601,6 +2749,7 @@ import com.example.todoapp.StopException;
 import com.example.todoapp.model.ExampleFrameworkResponseData;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
+import com.example.todoapp.pojo.exampleframework.IFrameworkStatusDetail;
 import com.example.todoapp.service.BookmarkService;
 import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.service.ExampleFrameworkService;
@@ -2806,7 +2955,7 @@ public class ExampleFrameworkPhaseProcessor {
         String errorMessage = "";
         
         if (response != null && response.getStatus() != null && response.getStatus().getStatusDetail() != null) {
-            mil.osd.myorg.todoapp.pojo.exampleframework.Status.StatusDetail statusDetail = response.getStatus().getStatusDetail();
+            IFrameworkStatusDetail statusDetail = response.getStatus().getStatusDetail();
             returnStatusCode = statusDetail.getSystemReturnCode();      // 1-2 digit status
             returnReasonCode = statusDetail.getSystemReturnStatusCode(); // 3-digit reason
             errorMessage = statusDetail.getSystemReturnContextText() != null ? 
@@ -6100,7 +6249,7 @@ public class ExampleFrameworkService {
     private static final Logger LOGGER = LogManager.getLogger(ExampleFrameworkService.class);
 
     // EXAMPLE_FRAMEWORK configuration
-    private final ExampleFrameworkClient<ExchangeMessage> exampleframeworkClient;
+    private final ExampleFrameworkClient<EventSchedulerExchangeMessageWrapper> exampleframeworkClient;
     private final int delayBetweenTransientExceptionRetryMillis;
     private final int notificationIntervalMillis;
     private final String notificationLogIndicator;
@@ -6146,8 +6295,8 @@ public class ExampleFrameworkService {
         
         String exampleframeworkUrl = exampleframeworkProtocol + "://" + exampleframeworkHost + ":" + exampleframeworkPort + exampleframeworkPath;
         HttpXmlGzipExampleFrameworkRouter exampleframeworkRouter = new HttpXmlGzipExampleFrameworkRouter(exampleframeworkUrl, (int) exampleframeworkRequestWaitTimeoutMillis);
-        this.exampleframeworkClient = new ExampleFrameworkClient<ExchangeMessage>(exampleframeworkRouter, exampleframeworkTransientRetries, delayBetweenTransientExceptionRetryMillis,
-                ExchangeMessage.class);
+        this.exampleframeworkClient = new ExampleFrameworkClient<EventSchedulerExchangeMessageWrapper>(exampleframeworkRouter, exampleframeworkTransientRetries, delayBetweenTransientExceptionRetryMillis,
+                EventSchedulerExchangeMessageWrapper.class);
         LOGGER.info("EXAMPLE_FRAMEWORK client initialized with {} transient retries, {} ms delay between retries", 
             exampleframeworkTransientRetries, delayBetweenTransientExceptionRetryMillis);
     }
@@ -6225,7 +6374,8 @@ public class ExampleFrameworkService {
             try {
                 // Use processInstructionWithRetries which handles EXAMPLE_FRAMEWORK-level retries internally
                 LOGGER.debug("Sending EXAMPLE_FRAMEWORK request, record retry attempt: {}", recordRetryAttempts);
-                ExchangeMessage response = this.exampleframeworkClient.processInstructionWithRetries(instructionXml);
+                EventSchedulerExchangeMessageWrapper wrapperResponse = this.exampleframeworkClient.processInstructionWithRetries(instructionXml);
+                ExchangeMessage response = wrapperResponse.getWrapped();
                 
                 // Success - return the response
                 if (recordRetryAttempts > 1) {
@@ -6268,11 +6418,107 @@ public class ExampleFrameworkService {
                 // Non-transient error - return the error response
                 LOGGER.error("EXAMPLE_FRAMEWORK push failed with non-transient error after {} record retry attempts", 
                     recordRetryAttempts);
-                return (ExchangeMessage) e.getResponse();
+                EventSchedulerExchangeMessageWrapper errorWrapper = (EventSchedulerExchangeMessageWrapper) e.getResponse();
+                return errorWrapper.getWrapped();
             }
         }
     }
 
+}====================
+
+File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/service/EventSchedulerExchangeMessageWrapper.java
+====================
+package com.example.todoapp.service;
+
+import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
+import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IExchangeMessage;
+import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
+import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
+import java.util.List;
+import java.util.ArrayList;
+
+/**
+ * Wrapper that adapts our internal ExchangeMessage to the mybatchscheduler interface.
+ * This allows ExampleFrameworkClient to work with our POJOs without polluting our internal interfaces.
+ */
+public class EventSchedulerExchangeMessageWrapper implements IExchangeMessage {
+    
+    private final ExchangeMessage wrapped;
+    
+    public EventSchedulerExchangeMessageWrapper(ExchangeMessage instructionBean) {
+        this.wrapped = instructionBean;
+    }
+    
+    public ExchangeMessage getWrapped() {
+        return wrapped;
+    }
+    
+    @Override
+    public IFrameworkStatus getStatus() {
+        if (wrapped.getStatus() == null) {
+            return null;
+        }
+        return new StatusWrapper(wrapped.getStatus());
+    }
+    
+    /**
+     * Wrapper for Status that implements mybatchscheduler IFrameworkStatus interface
+     */
+    private static class StatusWrapper implements IFrameworkStatus {
+        private final mil.osd.myorg.todoapp.pojo.exampleframework.IFrameworkStatus wrapped;
+        
+        public StatusWrapper(mil.osd.myorg.todoapp.pojo.exampleframework.IFrameworkStatus status) {
+            this.wrapped = status;
+        }
+        
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T extends IFrameworkStatusDetail> List<T> getStatusDetails() {
+            if (wrapped == null) {
+                return new ArrayList<>();
+            }
+            
+            List<mil.osd.myorg.todoapp.pojo.exampleframework.IFrameworkStatusDetail> details = wrapped.getStatusDetails();
+            List<T> result = new ArrayList<>();
+            
+            for (mil.osd.myorg.todoapp.pojo.exampleframework.IFrameworkStatusDetail detail : details) {
+                result.add((T) new StatusDetailWrapper(detail));
+            }
+            
+            return result;
+        }
+    }
+    
+    /**
+     * Wrapper for StatusDetail that implements mybatchscheduler IFrameworkStatusDetail interface
+     */
+    private static class StatusDetailWrapper implements IFrameworkStatusDetail {
+        private final mil.osd.myorg.todoapp.pojo.exampleframework.IFrameworkStatusDetail wrapped;
+        
+        public StatusDetailWrapper(mil.osd.myorg.todoapp.pojo.exampleframework.IFrameworkStatusDetail detail) {
+            this.wrapped = detail;
+        }
+        
+        @Override
+        public String getSystemReturnCode() {
+            return wrapped.getSystemReturnCode();
+        }
+        
+        @Override
+        public String getSystemReturnStatusCode() {
+            return wrapped.getSystemReturnStatusCode();
+        }
+        
+        @Override
+        public String getExampleFrameworkExceptionName() {
+            return wrapped.getExampleFrameworkExceptionName();
+        }
+        
+        @Override
+        public String getExampleFrameworkExceptionMessage() {
+            return wrapped.getExampleFrameworkExceptionMessage();
+        }
+    }
 }====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/service/RecoveryService.java
@@ -8550,7 +8796,7 @@ package com.example.todoapp.helper;
 import java.util.ArrayList;
 import java.util.List;
 
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
+import com.example.todoapp.pojo.exampleframework.IFrameworkStatus;
 import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
 import com.example.todoapp.pojo.exampleframework.ProcessorType1ion;
@@ -12191,6 +12437,7 @@ import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
 import com.example.todoapp.pojo.exampleframework.StatusDetail;
+import com.example.todoapp.pojo.exampleframework.IFrameworkStatus;
 import com.example.todoapp.service.BookmarkService;
 import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.service.ExampleFrameworkService;
@@ -12431,7 +12678,7 @@ public class ExampleFrameworkPhaseProcessorTest {
         ExampleFrameworkStatus status = mock(ExampleFrameworkStatus.class);
         StatusDetail detail = mock(StatusDetail.class);
         
-        when(response.getStatus()).thenReturn(status);
+        when(response.getStatus()).thenReturn((IFrameworkStatus) status);
         when(status.getStatusDetails()).thenReturn(Arrays.asList(detail));
         when(status.getProcessorType1ions()).thenReturn(Arrays.asList());
         when(detail.getSystemReturnCode()).thenReturn("0");
@@ -13234,8 +13481,8 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus;
-import myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail;
+import com.example.todoapp.pojo.exampleframework.IFrameworkStatus;
+import com.example.todoapp.pojo.exampleframework.IFrameworkStatusDetail;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import java.io.File;
 import com.example.todoapp.BatchJobReport;
