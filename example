@@ -6732,8 +6732,8 @@ public class StartupCleanupService {
                 }
             }
             
-        } catch (SftpException e) {
-            LOGGER.error("SFTP error during remote cleanup", e);
+        } catch (IOException | GeneralSecurityException | SftpException e) {
+            LOGGER.error("I/O, security, or SFTP error during remote cleanup", e);
             cleanupSuccessful = false;
         } catch (RuntimeException e) {
             LOGGER.error("Runtime error during remote cleanup", e);
