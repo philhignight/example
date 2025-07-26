@@ -1115,7 +1115,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
-import com.example.todoapp.pojo.exampleframework.IFrameworkStatusDetail;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.model.jsonl.JsonlProcessorType1ion;
 import com.example.todoapp.model.jsonl.JsonlStatusDetail;
@@ -1274,13 +1273,13 @@ public class ExampleFrameworkResponseData {
             }
             
             // Create JSONL status detail for logging/debugging from new status structure
-            if (response.getStatus() != null && response.getStatus().getStatusDetail() != null) {
-                IFrameworkStatusDetail statusDetail = response.getStatus().getStatusDetail();
+            if (response.getStatus() != null && !response.getStatus().getStatusDetails().isEmpty()) {
+                myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail statusDetail = response.getStatus().getStatusDetails().get(0);
                 this.statusDetail = new JsonlStatusDetail();
                 this.statusDetail.setSystemReturnCode(statusDetail.getSystemReturnCode());
                 this.statusDetail.setSystemReturnStatusCode(statusDetail.getSystemReturnStatusCode());
-                this.statusDetail.setExampleFrameworkExceptionName(statusDetail.getSystemReturnClassText());
-                this.statusDetail.setExampleFrameworkExceptionMessage(statusDetail.getSystemReturnContextText());
+                this.statusDetail.setExampleFrameworkExceptionName(statusDetail.getExampleFrameworkExceptionName());
+                this.statusDetail.setExampleFrameworkExceptionMessage(statusDetail.getExampleFrameworkExceptionMessage());
                 this.statusDetail.setExampleFrameworkExceptionStackTrace(""); // Not available in new structure
             }
             
@@ -1696,9 +1695,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 
 
-public class ExampleFrameworkStatus implements IFrameworkStatus {
+public class ExampleFrameworkStatus implements myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus {
 
-    public static List<ProcessorType1ion> getProcessorType1ions(IFrameworkStatus status) {
+    public static List<ProcessorType1ion> getProcessorType1ions(myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus status) {
         if (!(status instanceof ExampleFrameworkStatus)) {
             throw new IllegalArgumentException("Passed status must be an instance of ExampleFrameworkStatus");
         }
@@ -1712,9 +1711,17 @@ public class ExampleFrameworkStatus implements IFrameworkStatus {
     @JacksonXmlElementWrapper(useWrapping = false)
     private List<ProcessorType1ion> processorType1ions;
 
-    @Override
-    public IFrameworkStatusDetail getStatusDetail() {
+    public myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail getStatusDetail() {
         return statusDetail;
+    }
+    
+    // Implementation for mybatchscheduler interface
+    @Override
+    public java.util.List<myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail> getStatusDetails() {
+        if (statusDetail == null) {
+            return java.util.Collections.emptyList();
+        }
+        return java.util.Collections.singletonList(statusDetail);
     }
     
     public void setStatusDetail(StatusDetail statusDetail) {
@@ -1727,23 +1734,6 @@ public class ExampleFrameworkStatus implements IFrameworkStatus {
         }
         return processorType1ions;
     }
-}====================
-
-File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/IExchangeMessage.java
-====================
-package com.example.todoapp.pojo.exampleframework;
-
-/**
- * Internal interface for instruction bean from EXAMPLE_FRAMEWORK responses.
- * Replaces the external mybatchscheduler library dependency.
- */
-public interface IExchangeMessage {
-    
-    /**
-     * Gets the status of the instruction.
-     * @return the status object
-     */
-    IFrameworkStatus getStatus();
 }====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/ExchangeMessage.java
@@ -1759,7 +1749,7 @@ import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
  * Represents the ExchangeMessage XML structure from EXAMPLE_FRAMEWORK responses.
  */
 @JacksonXmlRootElement(localName = "ExchangeMessage")
-public class ExchangeMessage implements IExchangeMessage {
+public class ExchangeMessage implements myorg.mybatchscheduler.lib.exampleframeworkinstruction.IExchangeMessage {
     
     @JacksonXmlProperty(localName = "headers")
     private Headers headers;
@@ -1793,7 +1783,8 @@ public class ExchangeMessage implements IExchangeMessage {
     public void setOutputs(Outputs outputs) { this.outputs = outputs; }
     
     @Override
-    public IFrameworkStatus getStatus() { return status; }
+    public myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus getStatus() { return status; }
+    
     public void setStatus(Status status) { this.status = status; }
     
     /**
@@ -1930,76 +1921,6 @@ public class ExchangeMessage implements IExchangeMessage {
         public String getPersonTypeCode() { return personTypeCode; }
         public void setPersonTypeCode(String personTypeCode) { this.personTypeCode = personTypeCode; }
     }
-}====================
-
-File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/IFrameworkStatusDetail.java
-====================
-package com.example.todoapp.pojo.exampleframework;
-
-/**
- * Internal interface for status detail information from EXAMPLE_FRAMEWORK responses.
- * Replaces the external mybatchscheduler library dependency.
- */
-public interface IFrameworkStatusDetail {
-    
-    /**
-     * Gets the system return code.
-     * @return the system return code
-     */
-    String getSystemReturnCode();
-    
-    /**
-     * Gets the system return status code.
-     * @return the system return status code
-     */
-    String getSystemReturnStatusCode();
-    
-    /**
-     * Gets the EXAMPLE_FRAMEWORK exception name/class.
-     * @return the exception name or null if none
-     */
-    String getExampleFrameworkExceptionName();
-    
-    /**
-     * Gets the EXAMPLE_FRAMEWORK exception message.
-     * @return the exception message or null if none
-     */
-    String getExampleFrameworkExceptionMessage();
-    
-    /**
-     * Gets the EXAMPLE_FRAMEWORK exception stack trace.
-     * @return the stack trace or empty string if none
-     */
-    String getExampleFrameworkExceptionStackTrace();
-    
-    /**
-     * Gets the system return class text.
-     * @return the system return class text
-     */
-    String getSystemReturnClassText();
-    
-    /**
-     * Gets the system return context text.
-     * @return the system return context text
-     */
-    String getSystemReturnContextText();
-}====================
-
-File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/IFrameworkStatus.java
-====================
-package com.example.todoapp.pojo.exampleframework;
-
-/**
- * Internal interface for status information from EXAMPLE_FRAMEWORK responses.
- * Replaces the external mybatchscheduler library dependency.
- */
-public interface IFrameworkStatus {
-    
-    /**
-     * Gets the status detail.
-     * @return the status detail or null if none
-     */
-    IFrameworkStatusDetail getStatusDetail();
 }====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/pojo/exampleframework/Outputs.java
@@ -2281,7 +2202,7 @@ package com.example.todoapp.pojo.exampleframework;
 </subject>
 */
 
-public class StatusDetail implements IFrameworkStatusDetail {
+public class StatusDetail implements myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail {
 
     private String systemReturnCode;
     private String systemReturnStatusCode;
@@ -2309,21 +2230,39 @@ public class StatusDetail implements IFrameworkStatusDetail {
         return exampleframeworkExceptionMessage;
     }
 
-    @Override
     public String getExampleFrameworkExceptionStackTrace() {
         return exampleframeworkExceptionStackTrace;
     }
     
-    @Override
     public String getSystemReturnClassText() {
         // This field is not part of the standalone StatusDetail, return empty string
         return "";
     }
     
-    @Override
     public String getSystemReturnContextText() {
         // This field is not part of the standalone StatusDetail, return empty string
         return "";
+    }
+    
+    // Setter methods for conversion from mybatchscheduler interfaces
+    public void setSystemReturnCode(String systemReturnCode) {
+        this.systemReturnCode = systemReturnCode;
+    }
+    
+    public void setSystemReturnStatusCode(String systemReturnStatusCode) {
+        this.systemReturnStatusCode = systemReturnStatusCode;
+    }
+    
+    public void setExampleFrameworkExceptionName(String exampleframeworkExceptionName) {
+        this.exampleframeworkExceptionName = exampleframeworkExceptionName;
+    }
+    
+    public void setExampleFrameworkExceptionMessage(String exampleframeworkExceptionMessage) {
+        this.exampleframeworkExceptionMessage = exampleframeworkExceptionMessage;
+    }
+    
+    public void setExampleFrameworkExceptionStackTrace(String exampleframeworkExceptionStackTrace) {
+        this.exampleframeworkExceptionStackTrace = exampleframeworkExceptionStackTrace;
     }
 }
 ====================
@@ -2338,7 +2277,7 @@ import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
  * Status section of the ExchangeMessage XML response.
  * Contains status details including return codes.
  */
-public class Status implements IFrameworkStatus {
+public class Status implements myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus {
     
     @JacksonXmlProperty(localName = "statusDetail")
     private StatusDetail statusDetail;
@@ -2347,14 +2286,23 @@ public class Status implements IFrameworkStatus {
     public Status() {}
     
     // Getters and setters
-    @Override
     public StatusDetail getStatusDetail() { return statusDetail; }
     public void setStatusDetail(StatusDetail statusDetail) { this.statusDetail = statusDetail; }
+    
+    // Implementation for mybatchscheduler interface
+    @Override
+    public java.util.List<StatusDetail> getStatusDetails() {
+        if (statusDetail == null) {
+            return java.util.Collections.emptyList();
+        }
+        return java.util.Collections.singletonList(statusDetail);
+    }
+    
     
     /**
      * StatusDetail contains the return codes and status information
      */
-    public static class StatusDetail implements IFrameworkStatusDetail {
+    public static class StatusDetail implements myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail {
         @JacksonXmlProperty(isAttribute = true)
         private String systemReturnClassText;
         
@@ -2370,8 +2318,7 @@ public class Status implements IFrameworkStatus {
         // Default constructor
         public StatusDetail() {}
         
-        // Getters and setters
-        @Override
+        // Getters and setters for XML attributes
         public String getSystemReturnClassText() { return systemReturnClassText; }
         public void setSystemReturnClassText(String systemReturnClassText) { this.systemReturnClassText = systemReturnClassText; }
         
@@ -2379,7 +2326,6 @@ public class Status implements IFrameworkStatus {
         public String getSystemReturnCode() { return systemReturnCode; }
         public void setSystemReturnCode(String systemReturnCode) { this.systemReturnCode = systemReturnCode; }
         
-        @Override
         public String getSystemReturnContextText() { return systemReturnContextText; }
         public void setSystemReturnContextText(String systemReturnContextText) { this.systemReturnContextText = systemReturnContextText; }
         
@@ -2387,7 +2333,7 @@ public class Status implements IFrameworkStatus {
         public String getSystemReturnStatusCode() { return systemReturnStatusCode; }
         public void setSystemReturnStatusCode(String systemReturnStatusCode) { this.systemReturnStatusCode = systemReturnStatusCode; }
         
-        // Implement IFrameworkStatusDetail methods
+        // Implement mybatchscheduler IFrameworkStatusDetail interface methods
         @Override
         public String getExampleFrameworkExceptionMessage() {
             // Map our systemReturnContextText to the expected EXAMPLE_FRAMEWORK exception message
@@ -2398,12 +2344,6 @@ public class Status implements IFrameworkStatus {
         public String getExampleFrameworkExceptionName() {
             // Map our systemReturnClassText to the expected EXAMPLE_FRAMEWORK exception name
             return systemReturnClassText;
-        }
-        
-        @Override
-        public String getExampleFrameworkExceptionStackTrace() {
-            // Our XML structure doesn't include stack traces, return empty string
-            return "";
         }
     }
 }====================
@@ -2724,7 +2664,6 @@ import com.example.todoapp.StopException;
 import com.example.todoapp.model.ExampleFrameworkResponseData;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
-import com.example.todoapp.pojo.exampleframework.IFrameworkStatusDetail;
 import com.example.todoapp.service.BookmarkService;
 import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.service.ExampleFrameworkService;
@@ -2922,19 +2861,25 @@ public class ExampleFrameworkPhaseProcessor {
                                      throws IOException, StopException {
         
         LOGGER.debug("Sending record to EXAMPLE_FRAMEWORK for line {}", lineNumber);
-        ExchangeMessage response = exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath);
+        ExchangeMessage response;
+        try {
+            response = exampleframeworkService.sendUserIdentifierChangeRequest(record, stopFilePath);
+        } catch (myorg.mybatchscheduler.lib.exampleframework.StatusDetailException e) {
+            // Convert mybatchscheduler exceptions to IOException for consistency with existing error handling
+            throw new IOException("EXAMPLE_FRAMEWORK error: " + e.getMessage(), e);
+        }
         
         // Extrtype1 response details
         String returnStatusCode = "0";  // Default success status
         String returnReasonCode = null;  // No default - must be set by EXAMPLE_FRAMEWORK
         String errorMessage = "";
         
-        if (response != null && response.getStatus() != null && response.getStatus().getStatusDetail() != null) {
-            IFrameworkStatusDetail statusDetail = response.getStatus().getStatusDetail();
+        if (response != null && response.getStatus() != null && !response.getStatus().getStatusDetails().isEmpty()) {
+            myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatusDetail statusDetail = response.getStatus().getStatusDetails().get(0);
             returnStatusCode = statusDetail.getSystemReturnCode();      // 1-2 digit status
             returnReasonCode = statusDetail.getSystemReturnStatusCode(); // 3-digit reason
-            errorMessage = statusDetail.getSystemReturnContextText() != null ? 
-                statusDetail.getSystemReturnContextText().replaceAll("[\r\n]+", " ") : "";
+            errorMessage = statusDetail.getExampleFrameworkExceptionMessage() != null ? 
+                statusDetail.getExampleFrameworkExceptionMessage().replaceAll("[\r\n]+", " ") : "";
         }
         
         // Create response data using the extrtype1ed status codes
@@ -6202,11 +6147,13 @@ File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/service/ExampleFrame
 package com.example.todoapp.service;
 
 import java.io.IOException;
+import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.example.todoapp.service.InternalExampleFrameworkClient;
-import com.example.exampleframework.router.HttpXmlGzipExampleFrameworkRouter;
+import myorg.mybatchscheduler.lib.exampleframework.ExampleFrameworkClient;
+import myorg.mybatchscheduler.lib.exampleframework.StatusDetailException;
+import myorg.mybatchscheduler.lib.exampleframework.TransientStatusDetailException;
 import com.example.todoapp.Constants;
 import com.example.todoapp.StopException;
 import com.example.todoapp.model.TodoUpdateRecord;
@@ -6222,7 +6169,7 @@ public class ExampleFrameworkService {
     private static final Logger LOGGER = LogManager.getLogger(ExampleFrameworkService.class);
 
     // EXAMPLE_FRAMEWORK configuration
-    private final InternalExampleFrameworkClient exampleframeworkClient;
+    private final ExampleFrameworkClient exampleframeworkClient;
     private final int delayBetweenTransientExceptionRetryMillis;
     private final int notificationIntervalMillis;
     private final String notificationLogIndicator;
@@ -6266,28 +6213,36 @@ public class ExampleFrameworkService {
         this.fileSystemProvider = fileSystemProvider;
         this.threadProvider = threadProvider;
         
+        // Create HTTP router for EXAMPLE_FRAMEWORK communication
         String exampleframeworkUrl = exampleframeworkProtocol + "://" + exampleframeworkHost + ":" + exampleframeworkPort + exampleframeworkPath;
-        HttpXmlGzipExampleFrameworkRouter exampleframeworkRouter = new HttpXmlGzipExampleFrameworkRouter(exampleframeworkUrl, (int) exampleframeworkRequestWaitTimeoutMillis);
-        this.exampleframeworkClient = new InternalExampleFrameworkClient(exampleframeworkRouter, exampleframeworkTransientRetries, delayBetweenTransientExceptionRetryMillis);
+        mil.osd.myorg.exampleframework.router.HttpXmlGzipExampleFrameworkRouter router = 
+            new mil.osd.myorg.exampleframework.router.HttpXmlGzipExampleFrameworkRouter(exampleframeworkUrl, exampleframeworkRequestWaitTimeoutMillis);
+        
+        // Use the generic constructor - ExampleFrameworkClient will work with IExchangeMessage interface
+        this.exampleframeworkClient = new ExampleFrameworkClient(router, exampleframeworkRequestWaitTimeoutMillis, 
+            delayBetweenTransientExceptionRetryMillis, ExchangeMessage.class);
         LOGGER.info("EXAMPLE_FRAMEWORK client initialized with {} transient retries, {} ms delay between retries", 
             exampleframeworkTransientRetries, delayBetweenTransientExceptionRetryMillis);
     }
 
     /**
-     * Sends an userIdentifier change request to EXAMPLE_FRAMEWORK.
+     * Sends a PNID change request to EXAMPLE_FRAMEWORK.
      * 
-     * @param record userIdentifier change record
+     * @param record PNID change record
      * @param stopFilePath path to stop file
      * @return EXAMPLE_FRAMEWORK response
-     * @throws IOException        if an I/O error occurs
+     * @throws StatusDetailException        if a EXAMPLE_FRAMEWORK error occurs
+     * @throws TransientStatusDetailException if a transient EXAMPLE_FRAMEWORK error occurs
      * @throws StopException      if stop file detected
      */
     public ExchangeMessage sendUserIdentifierChangeRequest(TodoUpdateRecord record, String stopFilePath) 
-            throws IOException, StopException {
+            throws StatusDetailException, TransientStatusDetailException, StopException {
         // Generate EXAMPLE_FRAMEWORK instruction XML
         String instructionXml = generateExampleFrameworkInstructionXml(record);
-        // Send to EXAMPLE_FRAMEWORK with record-level retries for transient errors
-        return sendToExampleFrameworkWithRecordLevelRetries(instructionXml, stopFilePath);
+        
+        // Use the original ExampleFrameworkClient to send the request
+        // The ExampleFrameworkClient handles retries internally and returns our custom ExchangeMessage
+        return (ExchangeMessage) exampleframeworkClient.processInstructionWithRetries(instructionXml);
     }
 
     /**
@@ -6324,123 +6279,8 @@ public class ExampleFrameworkService {
         xml.append("</ExchangeMessage>");
         return xml.toString();
     }
-
-    /**
-     * Sends a request to EXAMPLE_FRAMEWORK with record-level retries for transient errors.
-     * 
-     * @param instructionXml EXAMPLE_FRAMEWORK instruction XML
-     * @param stopFilePath Path to stop file
-     * @return EXAMPLE_FRAMEWORK response
-     * @throws IOException   if an I/O error occurs
-     * @throws StopException if stop file is detected
-     */
-    private ExchangeMessage sendToExampleFrameworkWithRecordLevelRetries(String instructionXml, String stopFilePath) 
-            throws IOException, StopException {
-        int recordRetryAttempts = 0;
-        long startTime = timeProvider.currentTimeMillis();
-        long lastNotificationTime = 0;
-
-        while (true) {
-            recordRetryAttempts++;
-            
-            try {
-                // Use processInstructionWithRetries which handles EXAMPLE_FRAMEWORK-level retries internally
-                LOGGER.debug("Sending EXAMPLE_FRAMEWORK request, record retry attempt: {}", recordRetryAttempts);
-                ExchangeMessage response = this.exampleframeworkClient.processInstructionWithRetries(instructionXml);
-                
-                // Success - return the response
-                if (recordRetryAttempts > 1) {
-                    LOGGER.info("EXAMPLE_FRAMEWORK request succeeded after {} record-level retry attempts", recordRetryAttempts);
-                }
-                return response;
-                
-            } catch (IOException e) {
-                // EXAMPLE_FRAMEWORK client had an error - treat as potentially transient for record-level retry
-                LOGGER.warn("EXAMPLE_FRAMEWORK request failed. Starting record-level retry {} in {} ms: {}", 
-                    recordRetryAttempts, delayBetweenTransientExceptionRetryMillis, e.getMessage());
-                
-                // Check for STOP file
-                if (fileSystemProvider.fileExists(stopFilePath)) {
-                    LOGGER.info("Abandoning retries because stop file exists");
-                    throw new StopException();
-                }
-                
-                // Check if we've been retrying for notification interval and need to send notification
-                long currentTime = timeProvider.currentTimeMillis();
-                long elapsedTime = currentTime - startTime;
-                
-                if (elapsedTime >= notificationIntervalMillis
-                        && (currentTime - lastNotificationTime >= notificationIntervalMillis
-                                || lastNotificationTime == 0)) {
-                    // Send notification email by logging
-                    LOGGER.error("EXAMPLE_FRAMEWORK push failed. Retrying at record level. {}", notificationLogIndicator);
-                    lastNotificationTime = currentTime;
-                }
-                
-                // Wait before next record-level retry
-                try {
-                    threadProvider.sleep(delayBetweenTransientExceptionRetryMillis);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Record-level retry interrupted", ie);
-                }
-                
-            } catch (Exception e) {
-                // Unexpected error - log and create error response
-                LOGGER.error("EXAMPLE_FRAMEWORK push failed with unexpected error after {} record retry attempts: {}", 
-                    recordRetryAttempts, e.getMessage());
-                // Create a basic error response
-                ExchangeMessage errorResponse = new ExchangeMessage();
-                return errorResponse;
-            }
-        }
-    }
-
-}====================
-
-File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/service/InternalExampleFrameworkClient.java
+}
 ====================
-package com.example.todoapp.service;
-
-import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
-import com.example.exampleframework.router.HttpXmlGzipExampleFrameworkRouter;
-import java.io.IOException;
-
-/**
- * Internal EXAMPLE_FRAMEWORK client that completely replaces the mybatchscheduler library dependency.
- * This implementation handles EXAMPLE_FRAMEWORK communication without any mybatchscheduler interfaces.
- */
-public class InternalExampleFrameworkClient {
-    
-    private final HttpXmlGzipExampleFrameworkRouter router;
-    private final int retries;
-    private final int retryDelay;
-    
-    public InternalExampleFrameworkClient(HttpXmlGzipExampleFrameworkRouter router, int retries, int retryDelay) {
-        this.router = router;
-        this.retries = retries;
-        this.retryDelay = retryDelay;
-    }
-    
-    /**
-     * Process instruction with retries using our internal ExchangeMessage.
-     * This completely replaces the mybatchscheduler ExampleFrameworkClient functionality.
-     */
-    public ExchangeMessage processInstructionWithRetries(String instructionXml) throws IOException {
-        // For now, create a mock successful response
-        // In a real implementation, this would:
-        // 1. Send instructionXml to EXAMPLE_FRAMEWORK via HttpXmlGzipExampleFrameworkRouter
-        // 2. Deserialize the XML response to our ExchangeMessage
-        // 3. Handle retries on transient errors
-        
-        ExchangeMessage response = new ExchangeMessage();
-        // TODO: Implement type1ual EXAMPLE_FRAMEWORK communication via router
-        // TODO: Parse XML response into ExchangeMessage structure
-        // TODO: Handle retry logic for transient errors
-        
-        return response;
-    }
-}====================
 
 File: ./todo-record-job/src/main/java/mil/osd/myorg/todoapp/service/RecoveryService.java
 ====================
@@ -8717,7 +8557,6 @@ package com.example.todoapp.helper;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.example.todoapp.pojo.exampleframework.IFrameworkStatus;
 import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
 import com.example.todoapp.pojo.exampleframework.ProcessorType1ion;
@@ -8779,7 +8618,7 @@ public class ExampleFrameworkMockHelper {
             }
             
             @Override
-            public IFrameworkStatus getStatus() {
+            public myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus getStatus() {
                 return status;
             }
         };
@@ -8823,7 +8662,7 @@ public class ExampleFrameworkMockHelper {
             }
             
             @Override
-            public IFrameworkStatus getStatus() {
+            public myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus getStatus() {
                 return status;
             }
         };
@@ -11542,16 +11381,16 @@ class ExampleFrameworkResponseDataTest {
         mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrBusinessObject sponsorBusinessObject = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrBusinessObject.class);
         mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrIdentityBusinessObject identityBusinessObject = mock(mil.osd.myorg.todoapp.pojo.exampleframework.Outputs.AdminstrIdentityBusinessObject.class);
         
-        when(response.getStatus()).thenReturn(status);
-        when(status.getStatusDetail()).thenReturn(statusDetail);
+        when(response.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) status);
+        when(status.getStatusDetails()).thenReturn(java.util.Collections.singletonList(statusDetail));
         when(response.getOutputs()).thenReturn(outputs);
         when(outputs.getAdminstrBusinessObject()).thenReturn(sponsorBusinessObject);
         when(sponsorBusinessObject.getAdminstrIdentityBusinessObject()).thenReturn(identityBusinessObject);
         
         when(statusDetail.getSystemReturnStatusCode()).thenReturn("STATUS_CODE");
         when(statusDetail.getSystemReturnCode()).thenReturn("0");
-        when(statusDetail.getSystemReturnClassText()).thenReturn("None");
-        when(statusDetail.getSystemReturnContextText()).thenReturn("No error");
+        when(statusDetail.getExampleFrameworkExceptionName()).thenReturn("None");
+        when(statusDetail.getExampleFrameworkExceptionMessage()).thenReturn("No error");
         
         when(identityBusinessObject.getDodediPersonId()).thenReturn("12345");
         when(identityBusinessObject.getAdminstrDuplicateId()).thenReturn("67890");
@@ -12354,12 +12193,13 @@ import org.mockito.MockitoAnnotations;
 
 import com.example.todoapp.RecordValidator;
 import com.example.todoapp.StopException;
+import myorg.mybatchscheduler.lib.exampleframework.StatusDetailException;
+import myorg.mybatchscheduler.lib.exampleframework.TransientStatusDetailException;
 import com.example.todoapp.model.ExampleFrameworkResponseData;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
 import com.example.todoapp.pojo.exampleframework.StatusDetail;
-import com.example.todoapp.pojo.exampleframework.IFrameworkStatus;
 import com.example.todoapp.service.BookmarkService;
 import com.example.todoapp.service.ExampleFrameworkResponseFileService;
 import com.example.todoapp.service.ExampleFrameworkService;
@@ -12482,7 +12322,7 @@ public class ExampleFrameworkPhaseProcessorTest {
     }
     
     @Test
-    void testProcessExampleFrameworkPhase_StopRequested() throws IOException, StopException {
+    void testProcessExampleFrameworkPhase_StopRequested() throws IOException, StopException, StatusDetailException, TransientStatusDetailException {
         // Given
         TodoUpdateRecord record = createTestRecord("123456789", "987654321");
         List<TodoUpdateRecord> records = Arrays.asList(record);
@@ -12530,9 +12370,9 @@ public class ExampleFrameworkPhaseProcessorTest {
         
         when(mockRecordValidator.validateRecord(eq(record), eq(records))).thenReturn(null);
         when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record), any()))
-            .thenThrow(new IOException("Retry exhausted without stop file"));
+            .thenThrow(new StatusDetailException("Retry exhausted without stop file", null, null));
         
-        // When/Then - IOException should be propagated up, not caught
+        // When/Then - StatusDetailException should be converted to IOException by ExampleFrameworkPhaseProcessor
         assertThrows(IOException.class, () -> {
             processor.processExampleFrameworkPhase(records, "12345", "TODOUPDATE", null, mockBookmarkService, 0);
         });
@@ -12600,8 +12440,8 @@ public class ExampleFrameworkPhaseProcessorTest {
         ExampleFrameworkStatus status = mock(ExampleFrameworkStatus.class);
         StatusDetail detail = mock(StatusDetail.class);
         
-        when(response.getStatus()).thenReturn((IFrameworkStatus) status);
-        when(status.getStatusDetail()).thenReturn(detail);
+        when(response.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) status);
+        when(status.getStatusDetails()).thenReturn(java.util.Collections.singletonList(detail));
         when(detail.getSystemReturnCode()).thenReturn("0");
         when(detail.getSystemReturnStatusCode()).thenReturn("0");
         
@@ -12613,8 +12453,8 @@ public class ExampleFrameworkPhaseProcessorTest {
         ExampleFrameworkStatus status = mock(ExampleFrameworkStatus.class);
         StatusDetail detail = mock(StatusDetail.class);
         
-        when(response.getStatus()).thenReturn(status);
-        when(status.getStatusDetail()).thenReturn(detail);
+        when(response.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) status);
+        when(status.getStatusDetails()).thenReturn(java.util.Collections.singletonList(detail));
         when(detail.getSystemReturnCode()).thenReturn(returnCode);
         when(detail.getSystemReturnStatusCode()).thenReturn(statusCode);
         when(detail.getExampleFrameworkExceptionMessage()).thenReturn("Error message");
@@ -13399,8 +13239,6 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.example.todoapp.pojo.exampleframework.IFrameworkStatus;
-import com.example.todoapp.pojo.exampleframework.IFrameworkStatusDetail;
 import com.example.deers.batchreporting.api.BatchReportingApiKey;
 import java.io.File;
 import com.example.todoapp.BatchJobReport;
@@ -13491,8 +13329,8 @@ public class RecordProcessorEnhancedTest {
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
         when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
-        when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
-        when(mockExampleFrameworkStatus.getStatusDetail()).thenReturn(mockStatusDetail);
+        when(mockExampleFrameworkResponse.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) mockExampleFrameworkStatus);
+        when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(java.util.Collections.singletonList(mockStatusDetail));
         when(mockStatusDetail.getSystemReturnCode()).thenReturn("0");
         when(mockStatusDetail.getSystemReturnStatusCode()).thenReturn("00000");
         
@@ -13544,8 +13382,8 @@ public class RecordProcessorEnhancedTest {
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
         when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
-        when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
-        when(mockExampleFrameworkStatus.getStatusDetail()).thenReturn(mockStatusDetail);
+        when(mockExampleFrameworkResponse.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) mockExampleFrameworkStatus);
+        when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(java.util.Collections.singletonList(mockStatusDetail));
         when(mockStatusDetail.getSystemReturnCode()).thenReturn("2");
         when(mockStatusDetail.getSystemReturnStatusCode()).thenReturn("99999");
         
@@ -13591,8 +13429,8 @@ public class RecordProcessorEnhancedTest {
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
         when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
-        when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
-        when(mockExampleFrameworkStatus.getStatusDetail()).thenReturn(mockStatusDetail);
+        when(mockExampleFrameworkResponse.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) mockExampleFrameworkStatus);
+        when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(java.util.Collections.singletonList(mockStatusDetail));
         when(mockStatusDetail.getSystemReturnCode()).thenReturn("0");
         when(mockStatusDetail.getSystemReturnStatusCode()).thenReturn("00000");
         
@@ -13624,8 +13462,8 @@ public class RecordProcessorEnhancedTest {
         
         when(mockRecordValidator.validateRecord(any(), any())).thenReturn(null);
         when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(any(), anyString())).thenReturn(mockExampleFrameworkResponse);
-        when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
-        when(mockExampleFrameworkStatus.getStatusDetail()).thenReturn(mockStatusDetail);
+        when(mockExampleFrameworkResponse.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) mockExampleFrameworkStatus);
+        when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(java.util.Collections.singletonList(mockStatusDetail));
         when(mockStatusDetail.getSystemReturnCode()).thenReturn("0");
         when(mockStatusDetail.getSystemReturnStatusCode()).thenReturn("00000");
         
@@ -13960,7 +13798,7 @@ public class RecordProcessorIntegrationTest {
     }
     
     @Test
-    void testProcessRecords_StopException() throws IOException, StopException {
+    void testProcessRecords_StopException() throws IOException, StopException, myorg.mybatchscheduler.lib.exampleframework.StatusDetailException, myorg.mybatchscheduler.lib.exampleframework.TransientStatusDetailException {
         // Given
         List<TodoUpdateRecord> records = Arrays.asList(createTestRecord("123456789", "987654321"));
         
@@ -14338,8 +14176,8 @@ public class RecordProcessorTest {
             .thenReturn(mockExampleFrameworkResponse);
         
         // Mock EXAMPLE_FRAMEWORK status for successful response
-        when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
-        when(mockExampleFrameworkStatus.getStatusDetail()).thenReturn(mockStatusDetail);
+        when(mockExampleFrameworkResponse.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) mockExampleFrameworkStatus);
+        when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(java.util.Collections.singletonList(mockStatusDetail));
         when(mockStatusDetail.getSystemReturnCode()).thenReturn("0");
         when(mockStatusDetail.getSystemReturnStatusCode()).thenReturn("00000");
         
@@ -14421,7 +14259,7 @@ public class RecordProcessorTest {
      * Test stop exception propagation.
      */
     @Test
-    public void testProcessRecords_StopException() throws IOException, StopException {
+    public void testProcessRecords_StopException() throws IOException, StopException, myorg.mybatchscheduler.lib.exampleframework.StatusDetailException, myorg.mybatchscheduler.lib.exampleframework.TransientStatusDetailException {
         // Arrange
         TodoUpdateRecord record = createTestRecord();
         List<TodoUpdateRecord> records = Arrays.asList(record);
@@ -14469,8 +14307,8 @@ public class RecordProcessorTest {
             .thenReturn(mockExampleFrameworkResponse);
         
         // Mock successful EXAMPLE_FRAMEWORK response
-        when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
-        when(mockExampleFrameworkStatus.getStatusDetail()).thenReturn(mockStatusDetail);
+        when(mockExampleFrameworkResponse.getStatus()).thenReturn((myorg.mybatchscheduler.lib.exampleframeworkinstruction.IFrameworkStatus) mockExampleFrameworkStatus);
+        when(mockExampleFrameworkStatus.getStatusDetails()).thenReturn(java.util.Collections.singletonList(mockStatusDetail));
         when(mockStatusDetail.getSystemReturnCode()).thenReturn("0");
         when(mockStatusDetail.getSystemReturnStatusCode()).thenReturn("00000");
         
