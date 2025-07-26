@@ -13926,8 +13926,6 @@ import com.example.todoapp.StopException;
 import com.example.todoapp.batchreporting.BatchReportingAdapter;
 import com.example.todoapp.model.TodoUpdateRecord;
 import com.example.todoapp.pojo.exampleframework.ExchangeMessage;
-import com.example.todoapp.pojo.exampleframework.ExampleFrameworkStatus;
-import com.example.todoapp.pojo.exampleframework.StatusDetail;
 import com.example.todoapp.provider.IdGenerator;
 import com.example.todoapp.service.ExampleFrameworkService;
 import com.example.todoapp.service.ExampleFrameworkResponseFileService;
@@ -13949,12 +13947,6 @@ public class RecordProcessorTestFixed {
     
     @Mock
     private ExchangeMessage mockExampleFrameworkResponse;
-    
-    @Mock
-    private ExampleFrameworkStatus mockExampleFrameworkStatus;
-    
-    @Mock
-    private StatusDetail mockStatusDetail;
     
     @Mock
     private ExampleFrameworkResponseFileService mockExampleFrameworkResponseFileService;
@@ -13984,10 +13976,6 @@ public class RecordProcessorTestFixed {
         
         // Mock successful EXAMPLE_FRAMEWORK response
         doReturn(mockExampleFrameworkResponse).when(mockExampleFrameworkService).sendUserIdentifierChangeRequest(any(TodoUpdateRecord.class), anyString());
-        when(mockExampleFrameworkResponse.getStatus()).thenReturn(mockExampleFrameworkStatus);
-        when(mockExampleFrameworkStatus.getStatusDetail()).thenReturn(mockStatusDetail);
-        when(mockStatusDetail.getSystemReturnCode()).thenReturn("0");
-        when(mockStatusDetail.getSystemReturnStatusCode()).thenReturn("00000");
         
         // Mock ExampleFrameworkResponseFileService to not throw exceptions
         doNothing().when(mockExampleFrameworkResponseFileService).writeExampleFrameworkResponse(any(), any(), any());
