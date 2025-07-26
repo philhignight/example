@@ -6234,14 +6234,10 @@ public class ExampleFrameworkService {
      * @throws StatusDetailException        if a EXAMPLE_FRAMEWORK error occurs
      * @throws TransientStatusDetailException if a transient EXAMPLE_FRAMEWORK error occurs
      * @throws StopException      if stop file detected
+     * @throws IOException        if an I/O error occurs
      */
     public ExchangeMessage sendUserIdentifierChangeRequest(TodoUpdateRecord record, String stopFilePath) 
-            throws StatusDetailException, TransientStatusDetailException, StopException {
-        // Check for stop file before processing
-        if (stopFilePath != null && fileSystemProvider.fileExists(stopFilePath)) {
-            throw new StopException("Stop file detected: " + stopFilePath);
-        }
-        
+            throws StatusDetailException, TransientStatusDetailException, StopException, IOException {
         // Generate EXAMPLE_FRAMEWORK instruction XML
         String instructionXml = generateExampleFrameworkInstructionXml(record);
         
