@@ -6237,6 +6237,11 @@ public class ExampleFrameworkService {
      */
     public ExchangeMessage sendUserIdentifierChangeRequest(TodoUpdateRecord record, String stopFilePath) 
             throws StatusDetailException, TransientStatusDetailException, StopException {
+        // Check for stop file before processing
+        if (stopFilePath != null && fileSystemProvider.fileExists(stopFilePath)) {
+            throw new StopException("Stop file detected: " + stopFilePath);
+        }
+        
         // Generate EXAMPLE_FRAMEWORK instruction XML
         String instructionXml = generateExampleFrameworkInstructionXml(record);
         
