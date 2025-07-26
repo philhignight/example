@@ -12370,10 +12370,12 @@ public class ExampleFrameworkPhaseProcessorTest {
         List<TodoUpdateRecord> records = Arrays.asList(record);
         
         when(mockRecordValidator.validateRecord(eq(record), eq(records))).thenReturn(null);
-        when(mockExampleFrameworkService.sendUserIdentifierChangeRequest(eq(record), any()))
-            .thenThrow(new StatusDetailException("Retry exhausted without stop file", null, null));
         
-        // When/Then - StatusDetailException should be converted to IOException by ExampleFrameworkPhaseProcessor
+        // Throw IOException directly since ExampleFrameworkService now declares it throws IOException
+        doThrow(new IOException("Retry exhausted without stop file"))
+            .when(mockExampleFrameworkService).sendUserIdentifierChangeRequest(eq(record), any());
+        
+        // When/Then - IOException should be propagated by ExampleFrameworkPhaseProcessor
         assertThrows(IOException.class, () -> {
             processor.processExampleFrameworkPhase(records, "12345", "TODOUPDATE", null, mockBookmarkService, 0);
         });
