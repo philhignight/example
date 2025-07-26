@@ -6154,6 +6154,7 @@ import org.apache.logging.log4j.Logger;
 import myorg.mybatchscheduler.lib.exampleframework.ExampleFrameworkClient;
 import myorg.mybatchscheduler.lib.exampleframework.StatusDetailException;
 import myorg.mybatchscheduler.lib.exampleframework.TransientStatusDetailException;
+import com.example.exampleframework.router.HttpXmlGzipExampleFrameworkRouter;
 import com.example.todoapp.Constants;
 import com.example.todoapp.StopException;
 import com.example.todoapp.model.TodoUpdateRecord;
@@ -6169,7 +6170,7 @@ public class ExampleFrameworkService {
     private static final Logger LOGGER = LogManager.getLogger(ExampleFrameworkService.class);
 
     // EXAMPLE_FRAMEWORK configuration
-    private final ExampleFrameworkClient exampleframeworkClient;
+    private final ExampleFrameworkClient<ExchangeMessage> exampleframeworkClient;
     private final int delayBetweenTransientExceptionRetryMillis;
     private final int notificationIntervalMillis;
     private final String notificationLogIndicator;
@@ -6215,11 +6216,10 @@ public class ExampleFrameworkService {
         
         // Create HTTP router for EXAMPLE_FRAMEWORK communication
         String exampleframeworkUrl = exampleframeworkProtocol + "://" + exampleframeworkHost + ":" + exampleframeworkPort + exampleframeworkPath;
-        mil.osd.myorg.exampleframework.router.HttpXmlGzipExampleFrameworkRouter router = 
-            new mil.osd.myorg.exampleframework.router.HttpXmlGzipExampleFrameworkRouter(exampleframeworkUrl, exampleframeworkRequestWaitTimeoutMillis);
+        HttpXmlGzipExampleFrameworkRouter router = new HttpXmlGzipExampleFrameworkRouter(exampleframeworkUrl, exampleframeworkRequestWaitTimeoutMillis);
         
-        // Use the generic constructor - ExampleFrameworkClient will work with IExchangeMessage interface
-        this.exampleframeworkClient = new ExampleFrameworkClient(router, exampleframeworkRequestWaitTimeoutMillis, 
+        // Use the generic constructor - ExampleFrameworkClient will work with our ExchangeMessage
+        this.exampleframeworkClient = new ExampleFrameworkClient<>(router, exampleframeworkRequestWaitTimeoutMillis, 
             delayBetweenTransientExceptionRetryMillis, ExchangeMessage.class);
         LOGGER.info("EXAMPLE_FRAMEWORK client initialized with {} transient retries, {} ms delay between retries", 
             exampleframeworkTransientRetries, delayBetweenTransientExceptionRetryMillis);
@@ -6242,7 +6242,7 @@ public class ExampleFrameworkService {
         
         // Use the original ExampleFrameworkClient to send the request
         // The ExampleFrameworkClient handles retries internally and returns our custom ExchangeMessage
-        return (ExchangeMessage) exampleframeworkClient.processInstructionWithRetries(instructionXml);
+        return exampleframeworkClient.processInstructionWithRetries(instructionXml);
     }
 
     /**
