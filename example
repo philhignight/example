@@ -1,0 +1,638 @@
+(function() {
+    'use strict';
+
+    // Configuration
+    const CONFIG = {
+        TIMEOUT_MS: 5 * 60 * 1000, // 5 minutes
+        STORAGE_KEY: 'ai_chat_overlay_data',
+        RETRY_ATTEMPTS: 3,
+        RETRY_DELAY: 2000
+    };
+
+    // Chat Management
+    class ChatManager {
+        constructor() {
+            this.data = this.loadData();
+        }
+
+        loadData() {
+            try {
+                const stored = localStorage.getItem(CONFIG.STORAGE_KEY);
+                return stored ? JSON.parse(stored) : { chats: [], currentChatId: null };
+            } catch (e) {
+                console.error('Failed to load chat data:', e);
+                return { chats: [], currentChatId: null };
+            }
+        }
+
+        saveData() {
+            try {
+                localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(this.data));
+            } catch (e) {
+                console.error('Failed to save chat data:', e);
+            }
+        }
+
+        createNewChat() {
+            const chatId = Date.now().toString();
+            const chat = {
+                id: chatId,
+                timestamp: new Date().toLocaleString(),
+                messages: []
+            };
+            this.data.chats.unshift(chat);
+            this.data.currentChatId = chatId;
+            this.saveData();
+            return chat;
+        }
+
+        getCurrentChat() {
+            if (!this.data.currentChatId) return null;
+            return this.data.chats.find(chat => chat.id === this.data.currentChatId);
+        }
+
+        selectChat(chatId) {
+            this.data.currentChatId = chatId;
+            this.saveData();
+        }
+
+        addMessage(role, content) {
+            const chat = this.getCurrentChat();
+            if (chat) {
+                chat.messages.push({ role, content, timestamp: Date.now() });
+                this.saveData();
+            }
+        }
+
+        formatConversationForPrompt(newMessage) {
+            const chat = this.getCurrentChat();
+            if (!chat || chat.messages.length === 0) {
+                return `Please create the next assistant message for this conversation.
+
+# USER
+
+${newMessage}
+
+# ASSISTANT
+
+[your response goes here]`;
+            }
+
+            let conversation = 'Please create the next assistant message for this conversation.\n\n';
+            
+            // Add conversation history
+            for (const msg of chat.messages) {
+                conversation += `# ${msg.role.toUpperCase()}\n\n${msg.content}\n\n`;
+            }
+            
+            // Add new user message
+            conversation += `# USER\n\n${newMessage}\n\n# ASSISTANT\n\n[your response goes here]`;
+            
+            return conversation;
+        }
+    }
+
+    // Automation for existing interface
+    class InterfaceAutomator {
+        constructor() {
+            this.isProcessing = false;
+        }
+
+        async waitForElement(selector, timeout = CONFIG.TIMEOUT_MS) {
+            return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+                
+                const checkElement = () => {
+                    const element = document.querySelector(selector);
+                    if (element) {
+                        resolve(element);
+                        return;
+                    }
+                    
+                    if (Date.now() - startTime >= timeout) {
+                        reject(new Error(`Timeout waiting for element: ${selector}`));
+                        return;
+                    }
+                    
+                    setTimeout(checkElement, 100);
+                };
+                
+                checkElement();
+            });
+        }
+
+        async sendMessage(prompt) {
+            if (this.isProcessing) {
+                throw new Error('Already processing a message');
+            }
+
+            this.isProcessing = true;
+            
+            try {
+                // Step 1: Click new chat button
+                const newChatBtn = await this.waitForElement('#new-chat-button');
+                newChatBtn.click();
+                
+                // Step 2: Wait for chat input
+                const chatInput = await this.waitForElement('#chat-input');
+                
+                // Step 3: Insert prompt
+                chatInput.textContent = prompt;
+                
+                // Step 4: Wait for and click submit button
+                const submitBtn = await this.waitForElement('#submit-prompt-btn');
+                submitBtn.click();
+                
+                // Step 5: Wait for copy button (indicates completion)
+                await this.waitForElement('.copy-response-button');
+                
+                // Step 6: Extract response
+                const responseSection = await this.waitForElement('section[id^="response-content-"]');
+                const responseHtml = responseSection.innerHTML;
+                const responseText = responseSection.textContent || responseSection.innerText;
+                
+                return {
+                    html: responseHtml,
+                    text: responseText.trim()
+                };
+                
+            } finally {
+                this.isProcessing = false;
+            }
+        }
+
+        async sendMessageWithRetry(prompt, attempts = CONFIG.RETRY_ATTEMPTS) {
+            for (let i = 0; i < attempts; i++) {
+                try {
+                    return await this.sendMessage(prompt);
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed:`, error);
+                    
+                    if (i === attempts - 1) {
+                        throw error;
+                    }
+                    
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
+                }
+            }
+        }
+    }
+
+    // UI Creation
+    function createOverlayUI() {
+        // Remove existing overlay if present
+        const existing = document.getElementById('ai-chat-overlay');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ai-chat-overlay';
+        overlay.innerHTML = `
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h1>AI Chat Interface</h1>
+                    <div class="header-controls">
+                        <button id="new-chat" class="btn">New Chat</button>
+                        <button id="close-overlay" class="btn btn-danger">×</button>
+                    </div>
+                </div>
+                
+                <div class="chat-content">
+                    <div class="sidebar">
+                        <h3>Previous Chats</h3>
+                        <div id="chat-list" class="chat-list"></div>
+                    </div>
+                    
+                    <div class="main-chat">
+                        <div id="messages" class="messages"></div>
+                        <div class="input-area">
+                            <textarea id="user-input" placeholder="Type your message..." rows="3"></textarea>
+                            <button id="send-btn" class="btn btn-primary">Send</button>
+                        </div>
+                        <div id="status" class="status"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add CSS
+        const style = document.createElement('style');
+        style.textContent = `
+            #ai-chat-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: #1a1a1a;
+                color: #e0e0e0;
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                font-size: 14px;
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .chat-container {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                max-width: 100%;
+            }
+
+            .chat-header {
+                background: #2d2d2d;
+                padding: 15px 20px;
+                border-bottom: 1px solid #444;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .chat-header h1 {
+                margin: 0;
+                font-size: 18px;
+                font-weight: normal;
+            }
+
+            .header-controls {
+                display: flex;
+                gap: 10px;
+            }
+
+            .chat-content {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+            }
+
+            .sidebar {
+                width: 250px;
+                background: #252525;
+                border-right: 1px solid #444;
+                padding: 15px;
+                overflow-y: auto;
+            }
+
+            .sidebar h3 {
+                margin: 0 0 15px 0;
+                font-size: 14px;
+                font-weight: normal;
+                color: #ccc;
+            }
+
+            .chat-list {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .chat-item {
+                padding: 8px 12px;
+                background: #333;
+                border: 1px solid #444;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: background-color 0.2s;
+            }
+
+            .chat-item:hover {
+                background: #3a3a3a;
+            }
+
+            .chat-item.active {
+                background: #0d7377;
+                border-color: #14a085;
+            }
+
+            .main-chat {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .message {
+                max-width: 80%;
+                padding: 12px 16px;
+                border-radius: 8px;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+
+            .message.user {
+                align-self: flex-end;
+                background: #0d7377;
+                border: 1px solid #14a085;
+            }
+
+            .message.assistant {
+                align-self: flex-start;
+                background: #2d2d2d;
+                border: 1px solid #444;
+            }
+
+            .input-area {
+                padding: 15px 20px;
+                background: #2d2d2d;
+                border-top: 1px solid #444;
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+            }
+
+            #user-input {
+                flex: 1;
+                background: #1a1a1a;
+                border: 1px solid #444;
+                border-radius: 4px;
+                color: #e0e0e0;
+                padding: 10px;
+                font-family: inherit;
+                font-size: inherit;
+                resize: vertical;
+                min-height: 60px;
+            }
+
+            #user-input:focus {
+                outline: none;
+                border-color: #0d7377;
+            }
+
+            .btn {
+                background: #333;
+                border: 1px solid #444;
+                color: #e0e0e0;
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-family: inherit;
+                font-size: inherit;
+                transition: background-color 0.2s;
+            }
+
+            .btn:hover {
+                background: #3a3a3a;
+            }
+
+            .btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .btn-primary {
+                background: #0d7377;
+                border-color: #14a085;
+                height: fit-content;
+            }
+
+            .btn-primary:hover:not(:disabled) {
+                background: #0a5d61;
+            }
+
+            .btn-danger {
+                background: #d32f2f;
+                border-color: #f44336;
+            }
+
+            .btn-danger:hover {
+                background: #b71c1c;
+            }
+
+            .status {
+                padding: 10px 20px;
+                background: #2d2d2d;
+                border-top: 1px solid #444;
+                font-size: 12px;
+                color: #aaa;
+                min-height: 20px;
+            }
+
+            .status.processing {
+                color: #ffa726;
+            }
+
+            .status.error {
+                color: #f44336;
+            }
+
+            .status.success {
+                color: #4caf50;
+            }
+
+            /* Scrollbar styling */
+            .messages::-webkit-scrollbar,
+            .sidebar::-webkit-scrollbar,
+            #user-input::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            .messages::-webkit-scrollbar-track,
+            .sidebar::-webkit-scrollbar-track,
+            #user-input::-webkit-scrollbar-track {
+                background: #1a1a1a;
+            }
+
+            .messages::-webkit-scrollbar-thumb,
+            .sidebar::-webkit-scrollbar-thumb,
+            #user-input::-webkit-scrollbar-thumb {
+                background: #444;
+                border-radius: 4px;
+            }
+
+            .messages::-webkit-scrollbar-thumb:hover,
+            .sidebar::-webkit-scrollbar-thumb:hover,
+            #user-input::-webkit-scrollbar-thumb:hover {
+                background: #555;
+            }
+        `;
+
+        document.head.appendChild(style);
+        document.body.appendChild(overlay);
+
+        return overlay;
+    }
+
+    // Main Application
+    class ChatApp {
+        constructor() {
+            this.chatManager = new ChatManager();
+            this.automator = new InterfaceAutomator();
+            this.overlay = null;
+            this.elements = {};
+        }
+
+        init() {
+            this.overlay = createOverlayUI();
+            this.bindElements();
+            this.bindEvents();
+            this.updateUI();
+        }
+
+        bindElements() {
+            this.elements = {
+                newChatBtn: document.getElementById('new-chat'),
+                closeBtn: document.getElementById('close-overlay'),
+                chatList: document.getElementById('chat-list'),
+                messages: document.getElementById('messages'),
+                userInput: document.getElementById('user-input'),
+                sendBtn: document.getElementById('send-btn'),
+                status: document.getElementById('status')
+            };
+        }
+
+        bindEvents() {
+            this.elements.newChatBtn.addEventListener('click', () => {
+                this.createNewChat();
+            });
+
+            this.elements.closeBtn.addEventListener('click', () => {
+                this.close();
+            });
+
+            this.elements.sendBtn.addEventListener('click', () => {
+                this.sendMessage();
+            });
+
+            this.elements.userInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendMessage();
+                }
+            });
+        }
+
+        createNewChat() {
+            this.chatManager.createNewChat();
+            this.updateUI();
+            this.elements.userInput.focus();
+        }
+
+        selectChat(chatId) {
+            this.chatManager.selectChat(chatId);
+            this.updateUI();
+        }
+
+        updateUI() {
+            this.updateChatList();
+            this.updateMessages();
+            this.updateStatus('Ready');
+        }
+
+        updateChatList() {
+            const chatList = this.elements.chatList;
+            chatList.innerHTML = '';
+
+            this.chatManager.data.chats.forEach(chat => {
+                const item = document.createElement('div');
+                item.className = 'chat-item';
+                if (chat.id === this.chatManager.data.currentChatId) {
+                    item.classList.add('active');
+                }
+                
+                item.textContent = chat.timestamp;
+                item.addEventListener('click', () => {
+                    this.selectChat(chat.id);
+                });
+                
+                chatList.appendChild(item);
+            });
+        }
+
+        updateMessages() {
+            const messages = this.elements.messages;
+            messages.innerHTML = '';
+
+            const currentChat = this.chatManager.getCurrentChat();
+            if (!currentChat) return;
+
+            currentChat.messages.forEach(msg => {
+                const messageEl = document.createElement('div');
+                messageEl.className = `message ${msg.role}`;
+                messageEl.textContent = msg.content;
+                messages.appendChild(messageEl);
+            });
+
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        updateStatus(text, type = '') {
+            this.elements.status.textContent = text;
+            this.elements.status.className = `status ${type}`;
+        }
+
+        async sendMessage() {
+            const input = this.elements.userInput;
+            const message = input.value.trim();
+            
+            if (!message) return;
+
+            // Ensure we have a current chat
+            if (!this.chatManager.getCurrentChat()) {
+                this.createNewChat();
+            }
+
+            // Disable input
+            this.elements.sendBtn.disabled = true;
+            input.disabled = true;
+
+            try {
+                // Add user message
+                this.chatManager.addMessage('user', message);
+                this.updateMessages();
+                
+                // Clear input
+                input.value = '';
+                
+                // Format prompt for the existing interface
+                const prompt = this.chatManager.formatConversationForPrompt(message);
+                
+                this.updateStatus('Sending message...', 'processing');
+                
+                // Send to existing interface
+                const response = await this.automator.sendMessageWithRetry(prompt);
+                
+                // Add assistant response
+                this.chatManager.addMessage('assistant', response.text);
+                this.updateMessages();
+                
+                this.updateStatus('Message sent successfully', 'success');
+                
+            } catch (error) {
+                console.error('Failed to send message:', error);
+                this.updateStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                // Re-enable input
+                this.elements.sendBtn.disabled = false;
+                input.disabled = false;
+                input.focus();
+            }
+        }
+
+        close() {
+            if (this.overlay) {
+                this.overlay.remove();
+            }
+        }
+    }
+
+    // Initialize the app
+    const app = new ChatApp();
+    app.init();
+
+    // Make it globally accessible for debugging
+    window.aiChatOverlay = app;
+
+    console.log('AI Chat Overlay loaded! Type window.aiChatOverlay to access the app instance.');
+
+})();
