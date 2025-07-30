@@ -1,325 +1,807 @@
 (function() {
     'use strict';
 
-    // Experiment: Intercept API calls and capture template
-    
+    // Configuration
+    const CONFIG = {
+        STORAGE_KEY: 'ai_chat_overlay_api_data',
+        RETRY_ATTEMPTS: 3,
+        RETRY_DELAY: 2000
+    };
+
+    // Logging utility
     const Logger = {
         log: (category, message, data = null) => {
             const timestamp = new Date().toISOString();
-            const logMessage = `[EXPERIMENT] [${timestamp}] [${category}] ${message}`;
+            const logMessage = `[${timestamp}] [${category}] ${message}`;
             console.log(logMessage, data || '');
         },
         error: (category, message, error = null) => {
             const timestamp = new Date().toISOString();
-            const logMessage = `[EXPERIMENT] [${timestamp}] [${category}] ERROR: ${message}`;
+            const logMessage = `[${timestamp}] [${category}] ERROR: ${message}`;
             console.error(logMessage, error || '');
+        },
+        warn: (category, message, data = null) => {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [${category}] WARNING: ${message}`;
+            console.warn(logMessage, data || '');
         }
     };
 
-    // Storage for captured template and request details
-    let capturedTemplate = null;
-    let capturedRequestDetails = null;
-    let isTemplateCaptured = false;
-
-    // Override fetch function
-    const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
-        const url = args[0];
-        const options = args[1] || {};
+    // Utility functions
+    const Utils = {
+        generateUUID: () => {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        },
         
-        Logger.log('Fetch', 'Request intercepted', { 
-            url: url,
-            method: options.method || 'GET',
-            hasBody: !!options.body
-        });
-
-        // Check if this is the API call we want to intercept
-        if (typeof url === 'string' && url.includes('/api/v1/chats/new')) {
-            Logger.log('Fetch', 'TARGET API CALL DETECTED!', { url });
-            
-            if (options.body && !isTemplateCaptured) {
-                try {
-                    const requestBody = JSON.parse(options.body);
-                    Logger.log('Fetch', 'Original request body captured', requestBody);
-                    
-                    // Capture all request details
-                    capturedRequestDetails = {
-                        url: url,
-                        method: options.method || 'GET',
-                        headers: {},
-                        body: requestBody
-                    };
-                    
-                    // Extract headers
-                    if (options.headers) {
-                        if (options.headers instanceof Headers) {
-                            // Headers object
-                            for (let [key, value] of options.headers.entries()) {
-                                capturedRequestDetails.headers[key] = value;
-                            }
-                        } else if (typeof options.headers === 'object') {
-                            // Plain object
-                            capturedRequestDetails.headers = { ...options.headers };
-                        }
-                    }
-                    
-                    Logger.log('Fetch', 'Complete request details captured', capturedRequestDetails);
-                    
-                    // Save as template and remove the fake "hi" message
-                    capturedTemplate = JSON.parse(JSON.stringify(requestBody)); // Deep clone
-                    
-                    // Remove the fake message content but keep structure
-                    if (capturedTemplate.chat && capturedTemplate.chat.messages) {
-                        capturedTemplate.chat.messages.forEach(msg => {
-                            if (msg.content === 'hi') {
-                                Logger.log('Fetch', 'Removing fake "hi" message from template');
-                                msg.content = '{{USER_MESSAGE}}'; // Placeholder
-                            }
-                        });
-                        
-                        // Also update history
-                        if (capturedTemplate.chat.history && capturedTemplate.chat.history.messages) {
-                            Object.values(capturedTemplate.chat.history.messages).forEach(msg => {
-                                if (msg.content === 'hi') {
-                                    msg.content = '{{USER_MESSAGE}}'; // Placeholder
-                                }
-                            });
-                        }
-                    }
-                    
-                    isTemplateCaptured = true;
-                    Logger.log('Fetch', 'Template captured and cleaned', capturedTemplate);
-                    
-                    // Make both template and full request details globally accessible
-                    window.capturedApiTemplate = capturedTemplate;
-                    window.capturedRequestDetails = capturedRequestDetails;
-                    Logger.log('Fetch', 'Template saved to window.capturedApiTemplate');
-                    Logger.log('Fetch', 'Full request details saved to window.capturedRequestDetails');
-                    
-                } catch (e) {
-                    Logger.error('Fetch', 'Failed to parse request body', e);
-                }
-            }
+        get13DigitTimestamp: () => {
+            return Date.now();
+        },
+        
+        get10DigitTimestamp: () => {
+            return Math.floor(Date.now() / 1000);
         }
-
-        // Let the original request proceed
-        const response = await originalFetch.apply(this, args);
-        
-        // Log response for the target API
-        if (typeof url === 'string' && url.includes('/api/v1/chats/new')) {
-            try {
-                const responseClone = response.clone();
-                const responseData = await responseClone.json();
-                Logger.log('Fetch', 'API Response received', responseData);
-            } catch (e) {
-                Logger.log('Fetch', 'Could not parse API response as JSON');
-            }
-        }
-        
-        return response;
     };
 
-    Logger.log('Init', 'Fetch function overridden, starting UI automation');
+    // API Template Manager
+    class APITemplateManager {
+        constructor() {
+            Logger.log('APITemplate', 'Initializing API Template Manager');
+            this.template = null;
+            this.requestDetails = null;
+            this.isInitialized = false;
+            this.originalFetch = null;
+        }
 
-    // Function to wait for element
-    async function waitForElement(selector, timeout = 30000) {
-        Logger.log('Wait', `Waiting for element: ${selector}`);
-        
-        return new Promise((resolve, reject) => {
-            const startTime = Date.now();
+        async initialize() {
+            Logger.log('APITemplate', 'Starting template capture process');
             
-            const checkElement = () => {
-                const element = document.querySelector(selector);
-                const elapsed = Date.now() - startTime;
+            // Override fetch to capture template
+            this.originalFetch = window.fetch;
+            const self = this;
+            
+            window.fetch = async function(...args) {
+                const url = args[0];
+                const options = args[1] || {};
                 
-                if (element) {
-                    Logger.log('Wait', `Element found: ${selector}`, { 
-                        elapsedMs: elapsed,
-                        elementType: element.tagName,
-                        elementId: element.id
-                    });
-                    resolve(element);
-                    return;
+                // Check for target API call
+                if (typeof url === 'string' && url.includes('/api/v1/chats/new') && !self.isInitialized) {
+                    Logger.log('APITemplate', 'Capturing API template', { url });
+                    
+                    if (options.body) {
+                        try {
+                            const requestBody = JSON.parse(options.body);
+                            
+                            // Capture request details
+                            self.requestDetails = {
+                                url: url,
+                                method: options.method || 'POST',
+                                headers: self.extractHeaders(options.headers),
+                                basePayload: requestBody
+                            };
+                            
+                            // Create template by removing specific message content
+                            self.template = JSON.parse(JSON.stringify(requestBody));
+                            self.cleanTemplate();
+                            
+                            self.isInitialized = true;
+                            Logger.log('APITemplate', 'Template captured successfully');
+                            
+                        } catch (e) {
+                            Logger.error('APITemplate', 'Failed to capture template', e);
+                        }
+                    }
                 }
                 
-                if (elapsed >= timeout) {
-                    Logger.error('Wait', `Timeout waiting for element: ${selector}`, { 
-                        elapsedMs: elapsed 
-                    });
-                    reject(new Error(`Timeout waiting for element: ${selector}`));
-                    return;
-                }
-                
-                setTimeout(checkElement, 100);
+                // Let original request proceed
+                return self.originalFetch.apply(this, args);
             };
             
-            checkElement();
-        });
-    }
+            // Send dummy message to trigger template capture
+            await this.sendDummyMessage();
+            
+            // Wait for template to be captured
+            let attempts = 0;
+            while (!this.isInitialized && attempts < 50) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                attempts++;
+            }
+            
+            if (this.isInitialized) {
+                Logger.log('APITemplate', 'Template initialization complete');
+                return true;
+            } else {
+                Logger.error('APITemplate', 'Failed to initialize template');
+                return false;
+            }
+        }
 
-    // Main automation function
-    async function runExperiment() {
-        Logger.log('Experiment', 'Starting fake message automation');
-        
-        try {
-            // Step 1: Click new chat button
-            Logger.log('Experiment', 'Step 1: Looking for new chat button');
-            const newChatBtn = await waitForElement('#new-chat-button');
-            Logger.log('Experiment', 'Clicking new chat button');
-            newChatBtn.click();
+        extractHeaders(headers) {
+            const result = {};
+            if (headers) {
+                if (headers instanceof Headers) {
+                    for (let [key, value] of headers.entries()) {
+                        result[key] = value;
+                    }
+                } else if (typeof headers === 'object') {
+                    Object.assign(result, headers);
+                }
+            }
+            return result;
+        }
+
+        cleanTemplate() {
+            // Remove dummy content and replace with placeholders
+            if (this.template.chat && this.template.chat.messages) {
+                this.template.chat.messages.forEach(msg => {
+                    if (msg.role === 'user') {
+                        msg.content = '{{USER_MESSAGE}}';
+                    }
+                });
+                
+                if (this.template.chat.history && this.template.chat.history.messages) {
+                    Object.values(this.template.chat.history.messages).forEach(msg => {
+                        if (msg.role === 'user') {
+                            msg.content = '{{USER_MESSAGE}}';
+                        }
+                    });
+                }
+            }
+        }
+
+        async sendDummyMessage() {
+            Logger.log('APITemplate', 'Sending dummy message to capture template');
             
-            // Step 2: Wait for chat input
-            Logger.log('Experiment', 'Step 2: Waiting for chat input');
-            const chatInput = await waitForElement('#chat-input');
-            Logger.log('Experiment', 'Chat input found', {
-                inputType: chatInput.tagName,
-                isContentEditable: chatInput.contentEditable
-            });
-            
-            // Step 3: Insert fake message "hi"
-            Logger.log('Experiment', 'Step 3: Inserting fake message "hi"');
-            chatInput.textContent = 'hi';
-            Logger.log('Experiment', 'Fake message inserted');
-            
-            // Step 4: Wait for and click submit button
-            Logger.log('Experiment', 'Step 4: Looking for submit button');
-            const submitBtn = await waitForElement('#submit-prompt-btn');
-            Logger.log('Experiment', 'Submit button found, clicking');
-            submitBtn.click();
-            Logger.log('Experiment', 'Submit button clicked - API call should be triggered');
-            
-            // Wait a bit for the API call to complete
-            setTimeout(() => {
-                if (isTemplateCaptured) {
-                    Logger.log('Experiment', 'SUCCESS! Template captured successfully');
-                    Logger.log('Experiment', 'Access via window.capturedApiTemplate (payload only)');
-                    Logger.log('Experiment', 'Access via window.capturedRequestDetails (full request)');
-                    console.log('=== CAPTURED PAYLOAD TEMPLATE ===');
-                    console.log(JSON.stringify(window.capturedApiTemplate, null, 2));
-                    console.log('=== FULL REQUEST DETAILS ===');
-                    console.log(JSON.stringify(window.capturedRequestDetails, null, 2));
+            try {
+                // Wait for new chat button and click it
+                const newChatBtn = await this.waitForElement('#new-chat-button');
+                newChatBtn.click();
+                
+                // Wait for input and send dummy message
+                const chatInput = await this.waitForElement('#chat-input');
+                chatInput.textContent = 'template';
+                
+                // Click submit
+                const submitBtn = await this.waitForElement('#submit-prompt-btn');
+                submitBtn.click();
+                
+                Logger.log('APITemplate', 'Dummy message sent');
+                
+            } catch (error) {
+                Logger.error('APITemplate', 'Failed to send dummy message', error);
+            }
+        }
+
+        async waitForElement(selector, timeout = 10000) {
+            return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+                
+                const checkElement = () => {
+                    const element = document.querySelector(selector);
+                    if (element) {
+                        resolve(element);
+                        return;
+                    }
                     
-                    // Start test sequence
-                    startTestSequence();
-                } else {
-                    Logger.error('Experiment', 'Template was not captured - check if API endpoint matches');
-                }
-            }, 5000);
-            
-        } catch (error) {
-            Logger.error('Experiment', 'Automation failed', error);
+                    if (Date.now() - startTime >= timeout) {
+                        reject(new Error(`Timeout waiting for element: ${selector}`));
+                        return;
+                    }
+                    
+                    setTimeout(checkElement, 100);
+                };
+                
+                checkElement();
+            });
         }
-    }
 
-    // Function to create a real message using the template
-    window.createMessageFromTemplate = function(userMessage, conversationHistory = []) {
-        if (!capturedTemplate) {
-            Logger.error('Template', 'No template captured yet');
-            return null;
-        }
-        
-        Logger.log('Template', 'Creating message from template', { 
-            userMessage, 
-            historyLength: conversationHistory.length 
-        });
-        
-        // Clone the template
-        const payload = JSON.parse(JSON.stringify(capturedTemplate));
-        
-        // Replace placeholder with real message
-        if (payload.chat && payload.chat.messages) {
-            payload.chat.messages.forEach(msg => {
-                if (msg.content === '{{USER_MESSAGE}}') {
-                    msg.content = userMessage;
-                }
+        createPayload(userMessage, conversationHistory = []) {
+            if (!this.template) {
+                Logger.error('APITemplate', 'No template available');
+                return null;
+            }
+            
+            Logger.log('APITemplate', 'Creating payload for message', { 
+                messageLength: userMessage.length,
+                historyLength: conversationHistory.length
             });
             
-            // Also update history
-            if (payload.chat.history && payload.chat.history.messages) {
-                Object.values(payload.chat.history.messages).forEach(msg => {
+            // Clone template
+            const payload = JSON.parse(JSON.stringify(this.template));
+            
+            // Update timestamps
+            const timestamp13 = Utils.get13DigitTimestamp();
+            const timestamp10 = Utils.get10DigitTimestamp();
+            payload.chat.timestamp = timestamp13;
+            
+            // Create new message ID
+            const messageId = Utils.generateUUID();
+            
+            // Update message content and IDs
+            if (payload.chat.messages) {
+                payload.chat.messages.forEach(msg => {
                     if (msg.content === '{{USER_MESSAGE}}') {
                         msg.content = userMessage;
+                        msg.id = messageId;
+                        msg.timestamp = timestamp10;
                     }
                 });
             }
-        }
-        
-        // TODO: Add conversation history handling here if needed
-        
-        Logger.log('Template', 'Message created from template', payload);
-        return payload;
-    };
-
-    // Function to send a message using the captured request details
-    async function sendMessageWithTemplate(userMessage) {
-        if (!capturedRequestDetails) {
-            Logger.error('Test', 'No request details captured yet');
-            return null;
-        }
-        
-        Logger.log('Test', 'Sending custom message via API', { userMessage });
-        
-        // Create payload from template
-        const payload = window.createMessageFromTemplate(userMessage);
-        if (!payload) {
-            Logger.error('Test', 'Failed to create payload from template');
-            return null;
-        }
-        
-        try {
-            // Use the captured request details to make the API call
-            const response = await originalFetch(capturedRequestDetails.url, {
-                method: capturedRequestDetails.method,
-                headers: capturedRequestDetails.headers,
-                body: JSON.stringify(payload)
-            });
             
-            Logger.log('Test', 'API call completed', { 
-                status: response.status,
-                statusText: response.statusText 
-            });
-            
-            // Try to parse response
-            try {
-                const responseData = await response.json();
-                Logger.log('Test', 'API response data', responseData);
-                return responseData;
-            } catch (e) {
-                Logger.log('Test', 'Could not parse response as JSON');
-                const responseText = await response.text();
-                Logger.log('Test', 'Response as text', responseText);
-                return responseText;
+            // Update history
+            if (payload.chat.history) {
+                payload.chat.history.currentId = messageId;
+                
+                if (payload.chat.history.messages) {
+                    const newMessages = {};
+                    Object.entries(payload.chat.history.messages).forEach(([key, msg]) => {
+                        if (msg.content === '{{USER_MESSAGE}}') {
+                            msg.content = userMessage;
+                            msg.id = messageId;
+                            msg.timestamp = timestamp10;
+                            newMessages[messageId] = msg;
+                        } else {
+                            newMessages[key] = msg;
+                        }
+                    });
+                    payload.chat.history.messages = newMessages;
+                }
             }
             
-        } catch (error) {
-            Logger.error('Test', 'API call failed', error);
-            return null;
+            // TODO: Add conversation history handling
+            
+            Logger.log('APITemplate', 'Payload created successfully');
+            return payload;
+        }
+
+        async sendMessage(userMessage, conversationHistory = []) {
+            if (!this.isInitialized) {
+                Logger.error('APITemplate', 'Template not initialized');
+                return null;
+            }
+            
+            const payload = this.createPayload(userMessage, conversationHistory);
+            if (!payload) {
+                return null;
+            }
+            
+            try {
+                Logger.log('APITemplate', 'Sending message via API');
+                
+                const response = await this.originalFetch(this.requestDetails.url, {
+                    method: this.requestDetails.method,
+                    headers: this.requestDetails.headers,
+                    body: JSON.stringify(payload)
+                });
+                
+                Logger.log('APITemplate', 'API response received', { 
+                    status: response.status 
+                });
+                
+                const responseData = await response.json();
+                Logger.log('APITemplate', 'Message sent successfully', responseData);
+                
+                return responseData;
+                
+            } catch (error) {
+                Logger.error('APITemplate', 'Failed to send message', error);
+                return null;
+            }
         }
     }
 
-    // Test sequence function
-    async function startTestSequence() {
-        Logger.log('Test', 'Starting test sequence - will send 2 custom messages');
-        
-        // Test message 1
-        Logger.log('Test', 'TEST 1: Sending first custom message');
-        const response1 = await sendMessageWithTemplate('This is my first test message via direct API call');
-        
-        // Wait 10 seconds
-        Logger.log('Test', 'Waiting 10 seconds before second test...');
-        setTimeout(async () => {
-            // Test message 2
-            Logger.log('Test', 'TEST 2: Sending second custom message');
-            const response2 = await sendMessageWithTemplate('This is my second test message, sent 10 seconds after the first one');
-            
-            Logger.log('Test', 'Test sequence completed!');
-            Logger.log('Test', 'Check the AI interface to see if the messages appeared');
-            
-        }, 10000);
+    // Chat Management (simplified)
+    class ChatManager {
+        constructor() {
+            Logger.log('ChatManager', 'Initializing ChatManager');
+            this.data = this.loadData();
+        }
+
+        loadData() {
+            try {
+                const stored = localStorage.getItem(CONFIG.STORAGE_KEY);
+                return stored ? JSON.parse(stored) : { chats: [], currentChatId: null };
+            } catch (e) {
+                Logger.error('ChatManager', 'Failed to load chat data', e);
+                return { chats: [], currentChatId: null };
+            }
+        }
+
+        saveData() {
+            try {
+                localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(this.data));
+            } catch (e) {
+                Logger.error('ChatManager', 'Failed to save chat data', e);
+            }
+        }
+
+        createNewChat() {
+            const chatId = Date.now().toString();
+            const chat = {
+                id: chatId,
+                timestamp: new Date().toLocaleString(),
+                messages: []
+            };
+            this.data.chats.unshift(chat);
+            this.data.currentChatId = chatId;
+            this.saveData();
+            Logger.log('ChatManager', 'New chat created', { chatId });
+            return chat;
+        }
+
+        getCurrentChat() {
+            if (!this.data.currentChatId) return null;
+            return this.data.chats.find(chat => chat.id === this.data.currentChatId);
+        }
+
+        selectChat(chatId) {
+            this.data.currentChatId = chatId;
+            this.saveData();
+        }
+
+        addMessage(role, content) {
+            const chat = this.getCurrentChat();
+            if (chat) {
+                chat.messages.push({ role, content, timestamp: Date.now() });
+                this.saveData();
+                Logger.log('ChatManager', 'Message added', { role });
+            }
+        }
     }
 
-    // Start the experiment
-    Logger.log('Init', 'Experiment script loaded, starting in 2 seconds...');
-    setTimeout(runExperiment, 2000);
+    // Simplified UI
+    function createSimplifiedUI() {
+        // Remove existing overlay
+        const existing = document.getElementById('ai-chat-overlay-api');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ai-chat-overlay-api';
+        overlay.innerHTML = `
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h1>AI Chat (API Mode)</h1>
+                    <div class="header-controls">
+                        <button id="new-chat-api" class="btn">New Chat</button>
+                        <button id="close-overlay-api" class="btn btn-danger">×</button>
+                    </div>
+                </div>
+                
+                <div class="chat-content">
+                    <div class="sidebar">
+                        <h3>Previous Chats</h3>
+                        <div id="chat-list-api" class="chat-list"></div>
+                    </div>
+                    
+                    <div class="main-chat">
+                        <div id="messages-api" class="messages"></div>
+                        <div class="input-area">
+                            <textarea id="user-input-api" placeholder="Type your message..." rows="3"></textarea>
+                            <button id="send-btn-api" class="btn btn-primary">Send</button>
+                        </div>
+                        <div id="status-api" class="status">Initializing API template...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add CSS (same styling as before)
+        const style = document.createElement('style');
+        style.textContent = `
+            #ai-chat-overlay-api {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: #1a1a1a;
+                color: #e0e0e0;
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                font-size: 14px;
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .chat-container {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                max-width: 100%;
+            }
+
+            .chat-header {
+                background: #2d2d2d;
+                padding: 15px 20px;
+                border-bottom: 1px solid #444;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .chat-header h1 {
+                margin: 0;
+                font-size: 18px;
+                font-weight: normal;
+            }
+
+            .header-controls {
+                display: flex;
+                gap: 10px;
+            }
+
+            .chat-content {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+            }
+
+            .sidebar {
+                width: 250px;
+                background: #252525;
+                border-right: 1px solid #444;
+                padding: 15px;
+                overflow-y: auto;
+            }
+
+            .sidebar h3 {
+                margin: 0 0 15px 0;
+                font-size: 14px;
+                font-weight: normal;
+                color: #ccc;
+            }
+
+            .chat-list {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .chat-item {
+                padding: 8px 12px;
+                background: #333;
+                border: 1px solid #444;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: background-color 0.2s;
+            }
+
+            .chat-item:hover {
+                background: #3a3a3a;
+            }
+
+            .chat-item.active {
+                background: #0d7377;
+                border-color: #14a085;
+            }
+
+            .main-chat {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .message {
+                max-width: 80%;
+                padding: 12px 16px;
+                border-radius: 8px;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+
+            .message.user {
+                align-self: flex-end;
+                background: #0d7377;
+                border: 1px solid #14a085;
+            }
+
+            .message.assistant {
+                align-self: flex-start;
+                background: #2d2d2d;
+                border: 1px solid #444;
+            }
+
+            .input-area {
+                padding: 15px 20px;
+                background: #2d2d2d;
+                border-top: 1px solid #444;
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+            }
+
+            #user-input-api {
+                flex: 1;
+                background: #1a1a1a;
+                border: 1px solid #444;
+                border-radius: 4px;
+                color: #e0e0e0;
+                padding: 10px;
+                font-family: inherit;
+                font-size: inherit;
+                resize: vertical;
+                min-height: 60px;
+            }
+
+            #user-input-api:focus {
+                outline: none;
+                border-color: #0d7377;
+            }
+
+            .btn {
+                background: #333;
+                border: 1px solid #444;
+                color: #e0e0e0;
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-family: inherit;
+                font-size: inherit;
+                transition: background-color 0.2s;
+            }
+
+            .btn:hover {
+                background: #3a3a3a;
+            }
+
+            .btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .btn-primary {
+                background: #0d7377;
+                border-color: #14a085;
+                height: fit-content;
+            }
+
+            .btn-primary:hover:not(:disabled) {
+                background: #0a5d61;
+            }
+
+            .btn-danger {
+                background: #d32f2f;
+                border-color: #f44336;
+            }
+
+            .btn-danger:hover {
+                background: #b71c1c;
+            }
+
+            .status {
+                padding: 10px 20px;
+                background: #2d2d2d;
+                border-top: 1px solid #444;
+                font-size: 12px;
+                color: #aaa;
+                min-height: 20px;
+            }
+
+            .status.processing {
+                color: #ffa726;
+            }
+
+            .status.error {
+                color: #f44336;
+            }
+
+            .status.success {
+                color: #4caf50;
+            }
+
+            .status.ready {
+                color: #4caf50;
+            }
+        `;
+
+        document.head.appendChild(style);
+        document.body.appendChild(overlay);
+
+        return overlay;
+    }
+
+    // Main App
+    class SimplifiedChatApp {
+        constructor() {
+            Logger.log('App', 'Initializing Simplified Chat App');
+            this.apiManager = new APITemplateManager();
+            this.chatManager = new ChatManager();
+            this.overlay = null;
+            this.elements = {};
+        }
+
+        async init() {
+            Logger.log('App', 'Starting initialization');
+            
+            // Create UI
+            this.overlay = createSimplifiedUI();
+            this.bindElements();
+            this.bindEvents();
+            
+            // Initialize API template
+            this.updateStatus('Initializing API template...', 'processing');
+            const success = await this.apiManager.initialize();
+            
+            if (success) {
+                this.updateStatus('Ready - API template initialized', 'ready');
+                this.updateUI();
+                Logger.log('App', 'Initialization complete');
+            } else {
+                this.updateStatus('Failed to initialize API template', 'error');
+                Logger.error('App', 'Initialization failed');
+            }
+        }
+
+        bindElements() {
+            this.elements = {
+                newChatBtn: document.getElementById('new-chat-api'),
+                closeBtn: document.getElementById('close-overlay-api'),
+                chatList: document.getElementById('chat-list-api'),
+                messages: document.getElementById('messages-api'),
+                userInput: document.getElementById('user-input-api'),
+                sendBtn: document.getElementById('send-btn-api'),
+                status: document.getElementById('status-api')
+            };
+        }
+
+        bindEvents() {
+            this.elements.newChatBtn.addEventListener('click', () => {
+                this.createNewChat();
+            });
+
+            this.elements.closeBtn.addEventListener('click', () => {
+                this.close();
+            });
+
+            this.elements.sendBtn.addEventListener('click', () => {
+                this.sendMessage();
+            });
+
+            this.elements.userInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendMessage();
+                }
+            });
+        }
+
+        createNewChat() {
+            this.chatManager.createNewChat();
+            this.updateUI();
+            this.elements.userInput.focus();
+        }
+
+        selectChat(chatId) {
+            this.chatManager.selectChat(chatId);
+            this.updateUI();
+        }
+
+        updateUI() {
+            this.updateChatList();
+            this.updateMessages();
+        }
+
+        updateChatList() {
+            const chatList = this.elements.chatList;
+            chatList.innerHTML = '';
+
+            this.chatManager.data.chats.forEach(chat => {
+                const item = document.createElement('div');
+                item.className = 'chat-item';
+                if (chat.id === this.chatManager.data.currentChatId) {
+                    item.classList.add('active');
+                }
+                
+                item.textContent = chat.timestamp;
+                item.addEventListener('click', () => {
+                    this.selectChat(chat.id);
+                });
+                
+                chatList.appendChild(item);
+            });
+        }
+
+        updateMessages() {
+            const messages = this.elements.messages;
+            messages.innerHTML = '';
+
+            const currentChat = this.chatManager.getCurrentChat();
+            if (!currentChat) return;
+
+            currentChat.messages.forEach((msg) => {
+                const messageEl = document.createElement('div');
+                messageEl.className = `message ${msg.role}`;
+                messageEl.textContent = msg.content;
+                messages.appendChild(messageEl);
+            });
+
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        updateStatus(text, type = '') {
+            this.elements.status.textContent = text;
+            this.elements.status.className = `status ${type}`;
+        }
+
+        async sendMessage() {
+            const input = this.elements.userInput;
+            const message = input.value.trim();
+            
+            if (!message) return;
+
+            // Ensure we have a current chat
+            if (!this.chatManager.getCurrentChat()) {
+                this.createNewChat();
+            }
+
+            // Disable input
+            this.elements.sendBtn.disabled = true;
+            input.disabled = true;
+
+            try {
+                // Add user message
+                this.chatManager.addMessage('user', message);
+                this.updateMessages();
+                
+                // Clear input
+                input.value = '';
+                
+                this.updateStatus('Sending message via API...', 'processing');
+                
+                // Send via API
+                const response = await this.apiManager.sendMessage(message);
+                
+                if (response) {
+                    // For now, just show that we got a response
+                    // TODO: Parse actual AI response from the API
+                    this.chatManager.addMessage('assistant', 'Message sent successfully via API');
+                    this.updateMessages();
+                    this.updateStatus('Message sent successfully', 'success');
+                } else {
+                    this.updateStatus('Failed to send message', 'error');
+                }
+                
+            } catch (error) {
+                Logger.error('App', 'Failed to send message', error);
+                this.updateStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                // Re-enable input
+                this.elements.sendBtn.disabled = false;
+                input.disabled = false;
+                input.focus();
+            }
+        }
+
+        close() {
+            if (this.overlay) {
+                this.overlay.remove();
+            }
+        }
+    }
+
+    // Initialize the simplified app
+    Logger.log('Main', 'Loading Simplified AI Chat Overlay (API Mode)');
+    const app = new SimplifiedChatApp();
+    app.init();
+
+    // Make it globally accessible
+    window.aiChatOverlayAPI = app;
+
+    Logger.log('Main', 'Simplified AI Chat Overlay loaded successfully');
+    console.log('Simplified AI Chat Overlay loaded! Type window.aiChatOverlayAPI to access the app instance.');
 
 })();
