@@ -9,31 +9,66 @@
         RETRY_DELAY: 2000
     };
 
+    // Logging utility
+    const Logger = {
+        log: (category, message, data = null) => {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [${category}] ${message}`;
+            console.log(logMessage, data || '');
+        },
+        error: (category, message, error = null) => {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [${category}] ERROR: ${message}`;
+            console.error(logMessage, error || '');
+        },
+        warn: (category, message, data = null) => {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [${category}] WARNING: ${message}`;
+            console.warn(logMessage, data || '');
+        }
+    };
+
     // Chat Management
     class ChatManager {
         constructor() {
+            Logger.log('ChatManager', 'Initializing ChatManager');
             this.data = this.loadData();
+            Logger.log('ChatManager', 'ChatManager initialized', { 
+                chatCount: this.data.chats.length, 
+                currentChatId: this.data.currentChatId 
+            });
         }
 
         loadData() {
+            Logger.log('ChatManager', 'Loading chat data from localStorage');
             try {
                 const stored = localStorage.getItem(CONFIG.STORAGE_KEY);
-                return stored ? JSON.parse(stored) : { chats: [], currentChatId: null };
+                const data = stored ? JSON.parse(stored) : { chats: [], currentChatId: null };
+                Logger.log('ChatManager', 'Chat data loaded successfully', { 
+                    chatCount: data.chats.length,
+                    hasCurrentChat: !!data.currentChatId 
+                });
+                return data;
             } catch (e) {
-                console.error('Failed to load chat data:', e);
+                Logger.error('ChatManager', 'Failed to load chat data from localStorage', e);
                 return { chats: [], currentChatId: null };
             }
         }
 
         saveData() {
+            Logger.log('ChatManager', 'Saving chat data to localStorage');
             try {
                 localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(this.data));
+                Logger.log('ChatManager', 'Chat data saved successfully', { 
+                    chatCount: this.data.chats.length 
+                });
             } catch (e) {
-                console.error('Failed to save chat data:', e);
+                Logger.error('ChatManager', 'Failed to save chat data to localStorage', e);
             }
         }
 
         createNewChat() {
+            Logger.log('ChatManager', 'Creating new chat');
             const chatId = Date.now().toString();
             const chat = {
                 id: chatId,
@@ -43,31 +78,60 @@
             this.data.chats.unshift(chat);
             this.data.currentChatId = chatId;
             this.saveData();
+            Logger.log('ChatManager', 'New chat created', { chatId, timestamp: chat.timestamp });
             return chat;
         }
 
         getCurrentChat() {
-            if (!this.data.currentChatId) return null;
-            return this.data.chats.find(chat => chat.id === this.data.currentChatId);
+            Logger.log('ChatManager', 'Getting current chat', { currentChatId: this.data.currentChatId });
+            if (!this.data.currentChatId) {
+                Logger.warn('ChatManager', 'No current chat ID set');
+                return null;
+            }
+            const chat = this.data.chats.find(chat => chat.id === this.data.currentChatId);
+            if (!chat) {
+                Logger.warn('ChatManager', 'Current chat ID not found in chat list', { 
+                    currentChatId: this.data.currentChatId 
+                });
+            } else {
+                Logger.log('ChatManager', 'Current chat found', { 
+                    chatId: chat.id, 
+                    messageCount: chat.messages.length 
+                });
+            }
+            return chat;
         }
 
         selectChat(chatId) {
+            Logger.log('ChatManager', 'Selecting chat', { chatId });
             this.data.currentChatId = chatId;
             this.saveData();
+            Logger.log('ChatManager', 'Chat selected successfully');
         }
 
         addMessage(role, content) {
+            Logger.log('ChatManager', 'Adding message', { role, contentLength: content.length });
             const chat = this.getCurrentChat();
             if (chat) {
                 chat.messages.push({ role, content, timestamp: Date.now() });
                 this.saveData();
+                Logger.log('ChatManager', 'Message added successfully', { 
+                    role, 
+                    messageCount: chat.messages.length 
+                });
+            } else {
+                Logger.warn('ChatManager', 'Cannot add message - no current chat');
             }
         }
 
         formatConversationForPrompt(newMessage) {
+            Logger.log('ChatManager', 'Formatting conversation for prompt', { 
+                newMessageLength: newMessage.length 
+            });
             const chat = this.getCurrentChat();
             if (!chat || chat.messages.length === 0) {
-                return `Please create the next assistant message for this conversation.
+                Logger.log('ChatManager', 'No conversation history, using simple format');
+                const prompt = `Please create the next assistant message for this conversation.
 
 # USER
 
@@ -76,7 +140,13 @@ ${newMessage}
 # ASSISTANT
 
 [your response goes here]`;
+                Logger.log('ChatManager', 'Simple prompt formatted', { promptLength: prompt.length });
+                return prompt;
             }
+
+            Logger.log('ChatManager', 'Including conversation history', { 
+                messageCount: chat.messages.length 
+            });
 
             let conversation = 'Please create the next assistant message for this conversation.\n\n';
             
@@ -88,6 +158,11 @@ ${newMessage}
             // Add new user message
             conversation += `# USER\n\n${newMessage}\n\n# ASSISTANT\n\n[your response goes here]`;
             
+            Logger.log('ChatManager', 'Full conversation prompt formatted', { 
+                totalPromptLength: conversation.length,
+                historyMessageCount: chat.messages.length
+            });
+            
             return conversation;
         }
     }
@@ -95,23 +170,52 @@ ${newMessage}
     // Automation for existing interface
     class InterfaceAutomator {
         constructor() {
+            Logger.log('InterfaceAutomator', 'Initializing InterfaceAutomator');
             this.isProcessing = false;
         }
 
         async waitForElement(selector, timeout = CONFIG.TIMEOUT_MS) {
+            Logger.log('InterfaceAutomator', `Waiting for element: ${selector}`, { 
+                timeoutMs: timeout 
+            });
+            
             return new Promise((resolve, reject) => {
                 const startTime = Date.now();
+                let attempts = 0;
                 
                 const checkElement = () => {
+                    attempts++;
                     const element = document.querySelector(selector);
+                    const elapsed = Date.now() - startTime;
+                    
                     if (element) {
+                        Logger.log('InterfaceAutomator', `Element found: ${selector}`, { 
+                            attempts, 
+                            elapsedMs: elapsed,
+                            elementType: element.tagName,
+                            elementId: element.id,
+                            elementClass: element.className
+                        });
                         resolve(element);
                         return;
                     }
                     
-                    if (Date.now() - startTime >= timeout) {
+                    if (elapsed >= timeout) {
+                        Logger.error('InterfaceAutomator', `Timeout waiting for element: ${selector}`, {
+                            attempts,
+                            elapsedMs: elapsed,
+                            timeoutMs: timeout
+                        });
                         reject(new Error(`Timeout waiting for element: ${selector}`));
                         return;
+                    }
+                    
+                    // Log every 5 seconds while waiting
+                    if (attempts % 50 === 0) {
+                        Logger.log('InterfaceAutomator', `Still waiting for element: ${selector}`, { 
+                            attempts, 
+                            elapsedMs: elapsed 
+                        });
                     }
                     
                     setTimeout(checkElement, 100);
@@ -122,57 +226,112 @@ ${newMessage}
         }
 
         async sendMessage(prompt) {
+            Logger.log('InterfaceAutomator', 'Starting sendMessage process', { 
+                promptLength: prompt.length,
+                isProcessing: this.isProcessing 
+            });
+
             if (this.isProcessing) {
+                Logger.error('InterfaceAutomator', 'Already processing a message');
                 throw new Error('Already processing a message');
             }
 
             this.isProcessing = true;
+            Logger.log('InterfaceAutomator', 'Set processing flag to true');
             
             try {
                 // Step 1: Click new chat button
+                Logger.log('InterfaceAutomator', 'Step 1: Looking for new chat button');
                 const newChatBtn = await this.waitForElement('#new-chat-button');
+                Logger.log('InterfaceAutomator', 'Clicking new chat button');
                 newChatBtn.click();
+                Logger.log('InterfaceAutomator', 'New chat button clicked');
                 
                 // Step 2: Wait for chat input
+                Logger.log('InterfaceAutomator', 'Step 2: Waiting for chat input');
                 const chatInput = await this.waitForElement('#chat-input');
+                Logger.log('InterfaceAutomator', 'Chat input found', {
+                    inputType: chatInput.tagName,
+                    isContentEditable: chatInput.contentEditable,
+                    currentContent: chatInput.textContent?.substring(0, 100)
+                });
                 
                 // Step 3: Insert prompt
+                Logger.log('InterfaceAutomator', 'Step 3: Inserting prompt', { 
+                    promptLength: prompt.length 
+                });
                 chatInput.textContent = prompt;
+                Logger.log('InterfaceAutomator', 'Prompt inserted', {
+                    newContent: chatInput.textContent?.substring(0, 100) + '...'
+                });
                 
                 // Step 4: Wait for and click submit button
+                Logger.log('InterfaceAutomator', 'Step 4: Looking for submit button');
                 const submitBtn = await this.waitForElement('#submit-prompt-btn');
+                Logger.log('InterfaceAutomator', 'Submit button found, clicking');
                 submitBtn.click();
+                Logger.log('InterfaceAutomator', 'Submit button clicked');
                 
                 // Step 5: Wait for copy button (indicates completion)
+                Logger.log('InterfaceAutomator', 'Step 5: Waiting for response completion (copy button)');
                 await this.waitForElement('.copy-response-button');
+                Logger.log('InterfaceAutomator', 'Copy button found - response is complete');
                 
                 // Step 6: Extract response
+                Logger.log('InterfaceAutomator', 'Step 6: Extracting response content');
                 const responseSection = await this.waitForElement('section[id^="response-content-"]');
+                Logger.log('InterfaceAutomator', 'Response section found', {
+                    sectionId: responseSection.id,
+                    hasChildren: responseSection.children.length > 0
+                });
+                
                 const responseHtml = responseSection.innerHTML;
                 const responseText = responseSection.textContent || responseSection.innerText;
+                
+                Logger.log('InterfaceAutomator', 'Response extracted successfully', {
+                    htmlLength: responseHtml.length,
+                    textLength: responseText.length,
+                    textPreview: responseText.substring(0, 200) + '...'
+                });
                 
                 return {
                     html: responseHtml,
                     text: responseText.trim()
                 };
                 
+            } catch (error) {
+                Logger.error('InterfaceAutomator', 'Error in sendMessage', error);
+                throw error;
             } finally {
                 this.isProcessing = false;
+                Logger.log('InterfaceAutomator', 'Set processing flag to false');
             }
         }
 
         async sendMessageWithRetry(prompt, attempts = CONFIG.RETRY_ATTEMPTS) {
+            Logger.log('InterfaceAutomator', 'Starting sendMessageWithRetry', { 
+                maxAttempts: attempts,
+                promptLength: prompt.length 
+            });
+
             for (let i = 0; i < attempts; i++) {
+                const attemptNum = i + 1;
+                Logger.log('InterfaceAutomator', `Retry attempt ${attemptNum}/${attempts}`);
+                
                 try {
-                    return await this.sendMessage(prompt);
+                    const result = await this.sendMessage(prompt);
+                    Logger.log('InterfaceAutomator', `Attempt ${attemptNum} succeeded`);
+                    return result;
                 } catch (error) {
-                    console.error(`Attempt ${i + 1} failed:`, error);
+                    Logger.error('InterfaceAutomator', `Attempt ${attemptNum} failed`, error);
                     
                     if (i === attempts - 1) {
+                        Logger.error('InterfaceAutomator', 'All retry attempts exhausted');
                         throw error;
                     }
                     
                     // Wait before retry
+                    Logger.log('InterfaceAutomator', `Waiting ${CONFIG.RETRY_DELAY}ms before retry`);
                     await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
                 }
             }
@@ -466,6 +625,7 @@ ${newMessage}
     // Main Application
     class ChatApp {
         constructor() {
+            Logger.log('ChatApp', 'Initializing ChatApp');
             this.chatManager = new ChatManager();
             this.automator = new InterfaceAutomator();
             this.overlay = null;
@@ -473,13 +633,19 @@ ${newMessage}
         }
 
         init() {
+            Logger.log('ChatApp', 'Starting initialization');
             this.overlay = createOverlayUI();
+            Logger.log('ChatApp', 'Overlay UI created');
             this.bindElements();
+            Logger.log('ChatApp', 'Elements bound');
             this.bindEvents();
+            Logger.log('ChatApp', 'Events bound');
             this.updateUI();
+            Logger.log('ChatApp', 'UI updated - initialization complete');
         }
 
         bindElements() {
+            Logger.log('ChatApp', 'Binding DOM elements');
             this.elements = {
                 newChatBtn: document.getElementById('new-chat'),
                 closeBtn: document.getElementById('close-overlay'),
@@ -489,47 +655,74 @@ ${newMessage}
                 sendBtn: document.getElementById('send-btn'),
                 status: document.getElementById('status')
             };
+            
+            // Verify all elements were found
+            Object.entries(this.elements).forEach(([key, element]) => {
+                if (!element) {
+                    Logger.error('ChatApp', `Failed to find element: ${key}`);
+                } else {
+                    Logger.log('ChatApp', `Element bound: ${key}`, { 
+                        tagName: element.tagName, 
+                        id: element.id 
+                    });
+                }
+            });
         }
 
         bindEvents() {
+            Logger.log('ChatApp', 'Binding event listeners');
+            
             this.elements.newChatBtn.addEventListener('click', () => {
+                Logger.log('ChatApp', 'New chat button clicked');
                 this.createNewChat();
             });
 
             this.elements.closeBtn.addEventListener('click', () => {
+                Logger.log('ChatApp', 'Close button clicked');
                 this.close();
             });
 
             this.elements.sendBtn.addEventListener('click', () => {
+                Logger.log('ChatApp', 'Send button clicked');
                 this.sendMessage();
             });
 
             this.elements.userInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
+                    Logger.log('ChatApp', 'Enter key pressed (without shift)');
                     e.preventDefault();
                     this.sendMessage();
                 }
             });
+            
+            Logger.log('ChatApp', 'All event listeners bound');
         }
 
         createNewChat() {
+            Logger.log('ChatApp', 'Creating new chat');
             this.chatManager.createNewChat();
             this.updateUI();
             this.elements.userInput.focus();
+            Logger.log('ChatApp', 'New chat created and UI updated');
         }
 
         selectChat(chatId) {
+            Logger.log('ChatApp', 'Selecting chat', { chatId });
             this.chatManager.selectChat(chatId);
             this.updateUI();
+            Logger.log('ChatApp', 'Chat selected and UI updated');
         }
 
         updateUI() {
+            Logger.log('ChatApp', 'Updating UI');
             this.updateChatList();
             this.updateMessages();
             this.updateStatus('Ready');
+            Logger.log('ChatApp', 'UI update complete');
         }
 
         updateChatList() {
+            Logger.log('ChatApp', 'Updating chat list');
             const chatList = this.elements.chatList;
             chatList.innerHTML = '';
 
@@ -542,21 +735,30 @@ ${newMessage}
                 
                 item.textContent = chat.timestamp;
                 item.addEventListener('click', () => {
+                    Logger.log('ChatApp', 'Chat item clicked', { chatId: chat.id });
                     this.selectChat(chat.id);
                 });
                 
                 chatList.appendChild(item);
             });
+            
+            Logger.log('ChatApp', 'Chat list updated', { 
+                chatCount: this.chatManager.data.chats.length 
+            });
         }
 
         updateMessages() {
+            Logger.log('ChatApp', 'Updating messages display');
             const messages = this.elements.messages;
             messages.innerHTML = '';
 
             const currentChat = this.chatManager.getCurrentChat();
-            if (!currentChat) return;
+            if (!currentChat) {
+                Logger.log('ChatApp', 'No current chat - messages display cleared');
+                return;
+            }
 
-            currentChat.messages.forEach(msg => {
+            currentChat.messages.forEach((msg, index) => {
                 const messageEl = document.createElement('div');
                 messageEl.className = `message ${msg.role}`;
                 messageEl.textContent = msg.content;
@@ -564,55 +766,81 @@ ${newMessage}
             });
 
             messages.scrollTop = messages.scrollHeight;
+            Logger.log('ChatApp', 'Messages display updated', { 
+                messageCount: currentChat.messages.length 
+            });
         }
 
         updateStatus(text, type = '') {
+            Logger.log('ChatApp', 'Updating status', { text, type });
             this.elements.status.textContent = text;
             this.elements.status.className = `status ${type}`;
         }
 
         async sendMessage() {
+            Logger.log('ChatApp', 'Starting sendMessage process');
             const input = this.elements.userInput;
             const message = input.value.trim();
             
-            if (!message) return;
+            if (!message) {
+                Logger.warn('ChatApp', 'Empty message - ignoring send request');
+                return;
+            }
+
+            Logger.log('ChatApp', 'User message to send', { 
+                messageLength: message.length,
+                messagePreview: message.substring(0, 100)
+            });
 
             // Ensure we have a current chat
             if (!this.chatManager.getCurrentChat()) {
+                Logger.log('ChatApp', 'No current chat - creating new one');
                 this.createNewChat();
             }
 
             // Disable input
+            Logger.log('ChatApp', 'Disabling input controls');
             this.elements.sendBtn.disabled = true;
             input.disabled = true;
 
             try {
                 // Add user message
+                Logger.log('ChatApp', 'Adding user message to chat');
                 this.chatManager.addMessage('user', message);
                 this.updateMessages();
                 
                 // Clear input
                 input.value = '';
+                Logger.log('ChatApp', 'Input cleared');
                 
                 // Format prompt for the existing interface
+                Logger.log('ChatApp', 'Formatting conversation for prompt');
                 const prompt = this.chatManager.formatConversationForPrompt(message);
                 
                 this.updateStatus('Sending message...', 'processing');
                 
                 // Send to existing interface
+                Logger.log('ChatApp', 'Sending message to existing interface');
                 const response = await this.automator.sendMessageWithRetry(prompt);
+                Logger.log('ChatApp', 'Response received from existing interface', {
+                    responseTextLength: response.text.length,
+                    responseHtmlLength: response.html.length
+                });
                 
                 // Add assistant response
+                Logger.log('ChatApp', 'Adding assistant response to chat');
                 this.chatManager.addMessage('assistant', response.text);
                 this.updateMessages();
                 
                 this.updateStatus('Message sent successfully', 'success');
+                Logger.log('ChatApp', 'Message send process completed successfully');
                 
             } catch (error) {
-                console.error('Failed to send message:', error);
+                Logger.error('ChatApp', 'Failed to send message', error);
                 this.updateStatus(`Error: ${error.message}`, 'error');
             } finally {
                 // Re-enable input
+                Logger.log('ChatApp', 'Re-enabling input controls');
                 this.elements.sendBtn.disabled = false;
                 input.disabled = false;
                 input.focus();
@@ -620,19 +848,42 @@ ${newMessage}
         }
 
         close() {
+            Logger.log('ChatApp', 'Closing overlay');
             if (this.overlay) {
                 this.overlay.remove();
+                Logger.log('ChatApp', 'Overlay removed from DOM');
             }
         }
     }
 
     // Initialize the app
+    Logger.log('Main', 'Initializing AI Chat Overlay application');
     const app = new ChatApp();
     app.init();
 
     // Make it globally accessible for debugging
     window.aiChatOverlay = app;
 
+    Logger.log('Main', 'AI Chat Overlay application loaded successfully');
     console.log('AI Chat Overlay loaded! Type window.aiChatOverlay to access the app instance.');
+    
+    // Add network request monitoring
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+        Logger.log('Network', 'Fetch request detected', { 
+            url: args[0], 
+            method: args[1]?.method || 'GET',
+            hasBody: !!args[1]?.body
+        });
+        return originalFetch.apply(this, args);
+    };
+    
+    const originalXhrOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        Logger.log('Network', 'XMLHttpRequest detected', { method, url });
+        return originalXhrOpen.call(this, method, url, ...rest);
+    };
+    
+    Logger.log('Main', 'Network monitoring enabled');
 
 })();
