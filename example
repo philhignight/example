@@ -3,11 +3,10 @@
 
     // Configuration
     const CONFIG = {
-        STORAGE_KEY: 'ai_chat_overlay_exact_data',
-        RETRY_ATTEMPTS: 3,
-        RETRY_DELAY: 2000,
+        STORAGE_KEY: 'ai_chat_overlay_direct_data',
         HEARTBEAT_INTERVAL: 60000, // 60 seconds
-        HEARTBEAT_MESSAGE: 'respond "k"'
+        HEARTBEAT_MESSAGE: 'respond "k"',
+        API_ENDPOINT: '/api/v1/chats/new' // Relative URL so browser handles auth
     };
 
     // Logging utility
@@ -29,234 +28,185 @@
         }
     };
 
-    // Exact Copy API Manager
-    class ExactCopyAPIManager {
+    // Utility functions
+    const Utils = {
+        generateUUID: () => {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        },
+        
+        get13DigitTimestamp: () => {
+            return Date.now();
+        },
+        
+        get10DigitTimestamp: () => {
+            return Math.floor(Date.now() / 1000);
+        }
+    };
+
+    // Direct API Manager - No UI automation needed
+    class DirectAPIManager {
         constructor() {
-            Logger.log('ExactAPI', 'Initializing Exact Copy API Manager');
-            this.capturedRequest = null;
-            this.isInitialized = false;
-            this.originalFetch = null;
+            Logger.log('DirectAPI', 'Initializing Direct API Manager');
+            this.token = this.getAuthToken();
+            this.isReady = !!this.token;
+            
+            if (this.token) {
+                Logger.log('DirectAPI', 'Auth token found', { 
+                    tokenPreview: this.token.substring(0, 20) + '...' 
+                });
+            } else {
+                Logger.error('DirectAPI', 'No auth token found in localStorage');
+            }
         }
 
-        async initialize() {
-            Logger.log('ExactAPI', 'Starting exact request capture process');
-            
-            // Override fetch to capture the exact request
-            this.originalFetch = window.fetch;
-            const self = this;
-            
-            window.fetch = async function(...args) {
-                const url = args[0];
-                const options = args[1] || {};
-                
-                // Check for target API call and capture it exactly
-                if (typeof url === 'string' && url.includes('/api/v1/chats/new') && !self.isInitialized) {
-                    Logger.log('ExactAPI', 'Capturing exact API request', { url });
-                    
-                    if (options.body) {
-                        try {
-                            const requestBody = JSON.parse(options.body);
-                            
-                            // Capture the EXACT request - no modifications
-                            self.capturedRequest = {
-                                url: url,
-                                method: options.method || 'POST',
-                                headers: self.extractHeaders(options.headers),
-                                originalPayload: requestBody,
-                                originalMessage: self.extractMessageContent(requestBody)
-                            };
-                            
-                            self.isInitialized = true;
-                            Logger.log('ExactAPI', 'Exact request captured successfully', {
-                                originalMessage: self.capturedRequest.originalMessage
-                            });
-                            
-                        } catch (e) {
-                            Logger.error('ExactAPI', 'Failed to capture exact request', e);
-                        }
-                    }
-                }
-                
-                // Let original request proceed
-                return self.originalFetch.apply(this, args);
-            };
-            
-            // Send dummy message to trigger request capture
-            await this.sendDummyMessage();
-            
-            // Wait for request to be captured
-            let attempts = 0;
-            while (!this.isInitialized && attempts < 50) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                attempts++;
+        getAuthToken() {
+            try {
+                const token = localStorage.getItem('token');
+                return token;
+            } catch (e) {
+                Logger.error('DirectAPI', 'Failed to retrieve auth token', e);
+                return null;
             }
-            
-            if (this.isInitialized) {
-                Logger.log('ExactAPI', 'Exact request capture complete');
-                return true;
-            } else {
-                Logger.error('ExactAPI', 'Failed to capture exact request');
+        }
+
+        checkAuthToken() {
+            const currentToken = this.getAuthToken();
+            if (!currentToken) {
+                this.isReady = false;
                 return false;
             }
-        }
-
-        extractHeaders(headers) {
-            const result = {};
-            if (headers) {
-                if (headers instanceof Headers) {
-                    for (let [key, value] of headers.entries()) {
-                        result[key] = value;
-                    }
-                } else if (typeof headers === 'object') {
-                    Object.assign(result, headers);
-                }
-            }
-            return result;
-        }
-
-        extractMessageContent(payload) {
-            // Find the user message content in the payload
-            if (payload.chat && payload.chat.messages) {
-                for (const msg of payload.chat.messages) {
-                    if (msg.role === 'user') {
-                        return msg.content;
-                    }
-                }
-            }
-            return null;
-        }
-
-        replaceMessageContent(payload, newMessage) {
-            // Create exact copy and replace only the message content
-            const exactCopy = JSON.parse(JSON.stringify(payload));
             
-            // Replace in messages array
-            if (exactCopy.chat && exactCopy.chat.messages) {
-                exactCopy.chat.messages.forEach(msg => {
-                    if (msg.role === 'user' && msg.content === this.capturedRequest.originalMessage) {
-                        msg.content = newMessage;
-                    }
-                });
+            if (currentToken !== this.token) {
+                Logger.log('DirectAPI', 'Auth token updated');
+                this.token = currentToken;
             }
             
-            // Replace in history
-            if (exactCopy.chat && exactCopy.chat.history && exactCopy.chat.history.messages) {
-                Object.values(exactCopy.chat.history.messages).forEach(msg => {
-                    if (msg.role === 'user' && msg.content === this.capturedRequest.originalMessage) {
-                        msg.content = newMessage;
-                    }
-                });
-            }
-            
-            return exactCopy;
+            this.isReady = true;
+            return true;
         }
 
-        async sendDummyMessage() {
-            Logger.log('ExactAPI', 'Sending dummy message to capture exact request');
-            
-            try {
-                // Wait for new chat button and click it
-                const newChatBtn = await this.waitForElement('#new-chat-button');
-                newChatBtn.click();
-                
-                // Wait for input and send dummy message
-                const chatInput = await this.waitForElement('#chat-input');
-                chatInput.textContent = 'capture_exact';
-                
-                // Click submit
-                const submitBtn = await this.waitForElement('#submit-prompt-btn');
-                submitBtn.click();
-                
-                Logger.log('ExactAPI', 'Dummy message sent for exact capture');
-                
-            } catch (error) {
-                Logger.error('ExactAPI', 'Failed to send dummy message', error);
-            }
-        }
-
-        async waitForElement(selector, timeout = 30000) {
-            Logger.log('ExactAPI', `Waiting for element: ${selector}`, { timeoutMs: timeout });
-            
-            return new Promise((resolve, reject) => {
-                const startTime = Date.now();
-                let attempts = 0;
-                
-                const checkElement = () => {
-                    attempts++;
-                    const element = document.querySelector(selector);
-                    const elapsed = Date.now() - startTime;
-                    
-                    if (element) {
-                        Logger.log('ExactAPI', `Element found: ${selector}`, { 
-                            attempts, 
-                            elapsedMs: elapsed
-                        });
-                        resolve(element);
-                        return;
-                    }
-                    
-                    if (elapsed >= timeout) {
-                        Logger.error('ExactAPI', `Timeout waiting for element: ${selector}`, {
-                            attempts,
-                            elapsedMs: elapsed
-                        });
-                        reject(new Error(`Timeout waiting for element: ${selector}`));
-                        return;
-                    }
-                    
-                    setTimeout(checkElement, 100);
-                };
-                
-                checkElement();
+        createPayload(userMessage, conversationHistory = []) {
+            Logger.log('DirectAPI', 'Creating API payload', { 
+                messageLength: userMessage.length,
+                historyLength: conversationHistory.length
             });
+
+            const timestamp13 = Utils.get13DigitTimestamp();
+            const timestamp10 = Utils.get10DigitTimestamp();
+            const messageId = Utils.generateUUID();
+            
+            // Create the message object
+            const messageObj = {
+                childrenIds: [],
+                content: userMessage,
+                id: messageId,
+                models: ["Anthropic Claude 4 Sonnet"],
+                parentId: null,
+                role: "user",
+                timestamp: timestamp10
+            };
+            
+            // Start with current message
+            const messages = [messageObj];
+            
+            // Add conversation history if provided
+            conversationHistory.forEach(historyMsg => {
+                const historyMsgId = Utils.generateUUID();
+                messages.push({
+                    childrenIds: [],
+                    content: historyMsg.content,
+                    id: historyMsgId,
+                    models: ["Anthropic Claude 4 Sonnet"],
+                    parentId: null,
+                    role: historyMsg.role,
+                    timestamp: timestamp10
+                });
+            });
+            
+            // Create history object with messages keyed by ID
+            const historyMessages = {};
+            messages.forEach(msg => {
+                historyMessages[msg.id] = msg;
+            });
+            
+            const payload = {
+                chat: {
+                    params: {},
+                    tags: [],
+                    timestamp: timestamp13,
+                    title: "Chat Pending",
+                    models: ["Anthropic Claude 4 Sonnet"],
+                    messages: messages,
+                    id: "",
+                    history: {
+                        currentId: messageId,
+                        messages: historyMessages
+                    }
+                }
+            };
+
+            Logger.log('DirectAPI', 'Payload created successfully', {
+                messageId,
+                timestamp13,
+                timestamp10
+            });
+
+            return payload;
         }
 
-        async sendMessage(userMessage) {
-            if (!this.isInitialized) {
-                Logger.error('ExactAPI', 'Exact request not captured yet');
-                return null;
-            }
-            
-            Logger.log('ExactAPI', 'Sending message with exact copy method', { 
+        async sendMessage(userMessage, conversationHistory = []) {
+            Logger.log('DirectAPI', 'Sending direct API call', { 
                 userMessage: userMessage.substring(0, 50) + '...'
             });
-            
+
+            // Check auth token before sending
+            if (!this.checkAuthToken()) {
+                throw new Error('No authentication token available. Please log in.');
+            }
+
             try {
-                // Create exact copy with only message content replaced
-                const exactPayload = this.replaceMessageContent(
-                    this.capturedRequest.originalPayload, 
-                    userMessage
-                );
+                const payload = this.createPayload(userMessage, conversationHistory);
                 
-                Logger.log('ExactAPI', 'Exact payload created', {
-                    originalMessage: this.capturedRequest.originalMessage,
-                    newMessage: userMessage
+                // Make direct API call with Bearer token
+                const response = await fetch(CONFIG.API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.token}`
+                    },
+                    body: JSON.stringify(payload)
                 });
-                
-                // Send with exact same headers and URL
-                const response = await this.originalFetch(this.capturedRequest.url, {
-                    method: this.capturedRequest.method,
-                    headers: this.capturedRequest.headers,
-                    body: JSON.stringify(exactPayload)
+
+                Logger.log('DirectAPI', 'API response received', { 
+                    status: response.status,
+                    statusText: response.statusText
                 });
-                
-                Logger.log('ExactAPI', 'Exact copy API response received', { 
-                    status: response.status 
-                });
-                
+
+                if (response.status === 401) {
+                    throw new Error('Authentication failed. Token may be expired.');
+                } else if (response.status === 403) {
+                    throw new Error('Access denied. Check your permissions.');
+                } else if (!response.ok) {
+                    throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+                }
+
                 const responseData = await response.json();
-                Logger.log('ExactAPI', 'Message sent successfully with exact copy', responseData);
-                
+                Logger.log('DirectAPI', 'Message sent successfully', responseData);
+
                 return responseData;
-                
+
             } catch (error) {
-                Logger.error('ExactAPI', 'Failed to send message with exact copy', error);
-                return null;
+                Logger.error('DirectAPI', 'Failed to send message', error);
+                throw error;
             }
         }
     }
 
-    // Chat Management (simplified)
+    // Chat Management
     class ChatManager {
         constructor() {
             Logger.log('ChatManager', 'Initializing ChatManager');
@@ -313,47 +263,57 @@
                 Logger.log('ChatManager', 'Message added', { role });
             }
         }
+
+        getConversationHistory() {
+            const currentChat = this.getCurrentChat();
+            if (!currentChat) return [];
+            
+            return currentChat.messages.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            }));
+        }
     }
 
-    // UI Creation (same as before)
-    function createExactCopyUI() {
-        const existing = document.getElementById('ai-chat-overlay-exact');
+    // UI Creation
+    function createDirectAPIUI() {
+        const existing = document.getElementById('ai-chat-overlay-direct');
         if (existing) existing.remove();
 
         const overlay = document.createElement('div');
-        overlay.id = 'ai-chat-overlay-exact';
+        overlay.id = 'ai-chat-overlay-direct';
         overlay.innerHTML = `
             <div class="chat-container">
                 <div class="chat-header">
-                    <h1>AI Chat (Exact Copy Mode)</h1>
+                    <h1>AI Chat (Direct API)</h1>
                     <div class="header-controls">
-                        <button id="new-chat-exact" class="btn">New Chat</button>
-                        <button id="close-overlay-exact" class="btn btn-danger">×</button>
+                        <button id="new-chat-direct" class="btn">New Chat</button>
+                        <button id="close-overlay-direct" class="btn btn-danger">×</button>
                     </div>
                 </div>
                 
                 <div class="chat-content">
                     <div class="sidebar">
                         <h3>Previous Chats</h3>
-                        <div id="chat-list-exact" class="chat-list"></div>
+                        <div id="chat-list-direct" class="chat-list"></div>
                     </div>
                     
                     <div class="main-chat">
-                        <div id="messages-exact" class="messages"></div>
+                        <div id="messages-direct" class="messages"></div>
                         <div class="input-area">
-                            <textarea id="user-input-exact" placeholder="Type your message..." rows="3"></textarea>
-                            <button id="send-btn-exact" class="btn btn-primary">Send</button>
+                            <textarea id="user-input-direct" placeholder="Type your message..." rows="3"></textarea>
+                            <button id="send-btn-direct" class="btn btn-primary">Send</button>
                         </div>
-                        <div id="status-exact" class="status">Capturing exact API request...</div>
+                        <div id="status-direct" class="status">Ready - Direct API calls</div>
                     </div>
                 </div>
             </div>
         `;
 
-        // Add same CSS styling
+        // Add CSS styling
         const style = document.createElement('style');
         style.textContent = `
-            #ai-chat-overlay-exact {
+            #ai-chat-overlay-direct {
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -486,7 +446,7 @@
                 align-items: flex-end;
             }
 
-            #user-input-exact {
+            #user-input-direct {
                 flex: 1;
                 background: #1a1a1a;
                 border: 1px solid #444;
@@ -499,7 +459,7 @@
                 min-height: 60px;
             }
 
-            #user-input-exact:focus {
+            #user-input-direct:focus {
                 outline: none;
                 border-color: #0d7377;
             }
@@ -577,10 +537,10 @@
     }
 
     // Main App
-    class ExactCopyChatApp {
+    class DirectAPIChatApp {
         constructor() {
-            Logger.log('App', 'Initializing Exact Copy Chat App');
-            this.apiManager = new ExactCopyAPIManager();
+            Logger.log('App', 'Initializing Direct API Chat App');
+            this.apiManager = new DirectAPIManager();
             this.chatManager = new ChatManager();
             this.overlay = null;
             this.elements = {};
@@ -592,34 +552,32 @@
             Logger.log('App', 'Starting initialization');
             
             // Create UI
-            this.overlay = createExactCopyUI();
+            this.overlay = createDirectAPIUI();
             this.bindElements();
             this.bindEvents();
             
-            // Initialize exact copy capture
-            this.updateStatus('Capturing exact API request...', 'processing');
-            const success = await this.apiManager.initialize();
-            
-            if (success) {
-                this.updateStatus('Ready - Exact request captured', 'ready');
+            // Check if we have authentication
+            if (this.apiManager.isReady) {
+                this.updateStatus('Ready - Direct API calls', 'ready');
                 this.updateUI();
                 this.startHeartbeat();
                 Logger.log('App', 'Initialization complete');
             } else {
-                this.updateStatus('Failed to capture exact request', 'error');
-                Logger.error('App', 'Initialization failed');
+                this.updateStatus('Authentication required - No token found', 'error');
+                this.updateUI();
+                Logger.error('App', 'Initialization failed - no auth token');
             }
         }
 
         bindElements() {
             this.elements = {
-                newChatBtn: document.getElementById('new-chat-exact'),
-                closeBtn: document.getElementById('close-overlay-exact'),
-                chatList: document.getElementById('chat-list-exact'),
-                messages: document.getElementById('messages-exact'),
-                userInput: document.getElementById('user-input-exact'),
-                sendBtn: document.getElementById('send-btn-exact'),
-                status: document.getElementById('status-exact')
+                newChatBtn: document.getElementById('new-chat-direct'),
+                closeBtn: document.getElementById('close-overlay-direct'),
+                chatList: document.getElementById('chat-list-direct'),
+                messages: document.getElementById('messages-direct'),
+                userInput: document.getElementById('user-input-direct'),
+                sendBtn: document.getElementById('send-btn-direct'),
+                status: document.getElementById('status-direct')
             };
         }
 
@@ -706,6 +664,14 @@
             const input = this.elements.userInput;
             let message;
             
+            // Check authentication before sending
+            if (!this.apiManager.checkAuthToken()) {
+                if (!isHeartbeat) {
+                    this.updateStatus('Authentication required - No token found', 'error');
+                }
+                return;
+            }
+            
             if (isHeartbeat) {
                 message = CONFIG.HEARTBEAT_MESSAGE;
                 Logger.log('Heartbeat', 'Sending heartbeat message');
@@ -730,16 +696,20 @@
                     this.chatManager.addMessage('user', message);
                     this.updateMessages();
                     input.value = '';
-                    this.updateStatus('Sending message via exact copy...', 'processing');
+                    this.updateStatus('Sending message via direct API...', 'processing');
                 }
                 
-                const response = await this.apiManager.sendMessage(message);
+                // Get conversation history for context
+                const conversationHistory = isHeartbeat ? [] : this.chatManager.getConversationHistory().slice(0, -1); // Exclude the message we just added
+                
+                const response = await this.apiManager.sendMessage(message, conversationHistory);
                 
                 if (response) {
                     if (isHeartbeat) {
                         Logger.log('Heartbeat', 'Heartbeat sent successfully');
                     } else {
-                        this.chatManager.addMessage('assistant', 'Message sent successfully via exact copy');
+                        // TODO: Parse actual AI response from the API response
+                        this.chatManager.addMessage('assistant', `Response received (ID: ${response.id || 'unknown'})`);
                         this.updateMessages();
                         this.updateStatus('Message sent successfully', 'success');
                     }
@@ -752,7 +722,15 @@
             } catch (error) {
                 if (!isHeartbeat) {
                     Logger.error('App', 'Failed to send message', error);
-                    this.updateStatus(`Error: ${error.message}`, 'error');
+                    
+                    // Check if it's an auth error and update UI accordingly
+                    if (error.message.includes('Authentication') || error.message.includes('token')) {
+                        this.updateStatus('Authentication error - Please refresh and log in', 'error');
+                    } else {
+                        this.updateStatus(`Error: ${error.message}`, 'error');
+                    }
+                } else {
+                    Logger.error('Heartbeat', 'Heartbeat failed', error);
                 }
             } finally {
                 if (!isHeartbeat) {
@@ -768,6 +746,8 @@
         }
 
         startHeartbeat() {
+            Logger.log('Heartbeat', 'Starting heartbeat system');
+            
             if (this.heartbeatTimer) {
                 clearInterval(this.heartbeatTimer);
             }
@@ -776,6 +756,7 @@
                 const timeSinceActivity = Date.now() - this.lastActivityTime;
                 
                 if (timeSinceActivity >= CONFIG.HEARTBEAT_INTERVAL) {
+                    Logger.log('Heartbeat', 'Sending heartbeat to keep session alive');
                     this.sendMessage(true);
                     this.updateActivity();
                 }
@@ -797,14 +778,14 @@
         }
     }
 
-    // Initialize the exact copy app
-    Logger.log('Main', 'Loading Exact Copy AI Chat Overlay');
-    const app = new ExactCopyChatApp();
+    // Initialize the direct API app
+    Logger.log('Main', 'Loading Direct API AI Chat Overlay');
+    const app = new DirectAPIChatApp();
     app.init();
 
-    window.aiChatOverlayExact = app;
+    window.aiChatOverlayDirect = app;
 
-    Logger.log('Main', 'Exact Copy AI Chat Overlay loaded successfully');
-    console.log('Exact Copy AI Chat Overlay loaded! Access via window.aiChatOverlayExact');
+    Logger.log('Main', 'Direct API AI Chat Overlay loaded successfully');
+    console.log('Direct API AI Chat Overlay loaded! Access via window.aiChatOverlayDirect');
 
 })();
