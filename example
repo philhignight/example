@@ -281,8 +281,47 @@ ${newMessage}
                 
                 // Step 5: Wait for copy button (indicates completion)
                 Logger.log('InterfaceAutomator', 'Step 5: Waiting for response completion (copy button)');
+                
+                // Start monitoring response content while waiting
+                const monitorInterval = setInterval(() => {
+                    const responseSection = document.querySelector('section[id^="response-content-"]');
+                    if (responseSection) {
+                        Logger.log('InterfaceAutomator', 'Response content during loading', {
+                            htmlLength: responseSection.innerHTML.length,
+                            htmlContent: responseSection.innerHTML.substring(0, 500) + '...'
+                        });
+                    } else {
+                        Logger.log('InterfaceAutomator', 'No response section found yet');
+                    }
+                }, 1000);
+                
                 await this.waitForElement('.copy-response-button');
                 Logger.log('InterfaceAutomator', 'Copy button found - response is complete');
+                
+                // Continue monitoring for 5 more seconds after copy button appears
+                Logger.log('InterfaceAutomator', 'Monitoring response for 5 more seconds after completion');
+                let additionalMonitorCount = 0;
+                const additionalMonitorInterval = setInterval(() => {
+                    additionalMonitorCount++;
+                    const responseSection = document.querySelector('section[id^="response-content-"]');
+                    if (responseSection) {
+                        Logger.log('InterfaceAutomator', `Post-completion response content (${additionalMonitorCount}/5)`, {
+                            htmlLength: responseSection.innerHTML.length,
+                            htmlContent: responseSection.innerHTML.substring(0, 500) + '...'
+                        });
+                    }
+                    
+                    if (additionalMonitorCount >= 5) {
+                        clearInterval(additionalMonitorInterval);
+                        Logger.log('InterfaceAutomator', 'Post-completion monitoring finished');
+                    }
+                }, 1000);
+                
+                // Clear the original monitoring interval
+                clearInterval(monitorInterval);
+                
+                // Wait for the additional monitoring to complete
+                await new Promise(resolve => setTimeout(resolve, 5000));
                 
                 // Step 6: Extract response
                 Logger.log('InterfaceAutomator', 'Step 6: Extracting response content');
