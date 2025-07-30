@@ -16,8 +16,9 @@
         }
     };
 
-    // Storage for captured template
+    // Storage for captured template and request details
     let capturedTemplate = null;
+    let capturedRequestDetails = null;
     let isTemplateCaptured = false;
 
     // Override fetch function
@@ -40,6 +41,29 @@
                 try {
                     const requestBody = JSON.parse(options.body);
                     Logger.log('Fetch', 'Original request body captured', requestBody);
+                    
+                    // Capture all request details
+                    capturedRequestDetails = {
+                        url: url,
+                        method: options.method || 'GET',
+                        headers: {},
+                        body: requestBody
+                    };
+                    
+                    // Extract headers
+                    if (options.headers) {
+                        if (options.headers instanceof Headers) {
+                            // Headers object
+                            for (let [key, value] of options.headers.entries()) {
+                                capturedRequestDetails.headers[key] = value;
+                            }
+                        } else if (typeof options.headers === 'object') {
+                            // Plain object
+                            capturedRequestDetails.headers = { ...options.headers };
+                        }
+                    }
+                    
+                    Logger.log('Fetch', 'Complete request details captured', capturedRequestDetails);
                     
                     // Save as template and remove the fake "hi" message
                     capturedTemplate = JSON.parse(JSON.stringify(requestBody)); // Deep clone
@@ -66,9 +90,11 @@
                     isTemplateCaptured = true;
                     Logger.log('Fetch', 'Template captured and cleaned', capturedTemplate);
                     
-                    // Make the template globally accessible
+                    // Make both template and full request details globally accessible
                     window.capturedApiTemplate = capturedTemplate;
+                    window.capturedRequestDetails = capturedRequestDetails;
                     Logger.log('Fetch', 'Template saved to window.capturedApiTemplate');
+                    Logger.log('Fetch', 'Full request details saved to window.capturedRequestDetails');
                     
                 } catch (e) {
                     Logger.error('Fetch', 'Failed to parse request body', e);
@@ -166,9 +192,15 @@
             setTimeout(() => {
                 if (isTemplateCaptured) {
                     Logger.log('Experiment', 'SUCCESS! Template captured successfully');
-                    Logger.log('Experiment', 'You can now access the template via window.capturedApiTemplate');
-                    console.log('=== CAPTURED TEMPLATE ===');
+                    Logger.log('Experiment', 'Access via window.capturedApiTemplate (payload only)');
+                    Logger.log('Experiment', 'Access via window.capturedRequestDetails (full request)');
+                    console.log('=== CAPTURED PAYLOAD TEMPLATE ===');
                     console.log(JSON.stringify(window.capturedApiTemplate, null, 2));
+                    console.log('=== FULL REQUEST DETAILS ===');
+                    console.log(JSON.stringify(window.capturedRequestDetails, null, 2));
+                    
+                    // Start test sequence
+                    startTestSequence();
                 } else {
                     Logger.error('Experiment', 'Template was not captured - check if API endpoint matches');
                 }
@@ -217,6 +249,74 @@
         Logger.log('Template', 'Message created from template', payload);
         return payload;
     };
+
+    // Function to send a message using the captured request details
+    async function sendMessageWithTemplate(userMessage) {
+        if (!capturedRequestDetails) {
+            Logger.error('Test', 'No request details captured yet');
+            return null;
+        }
+        
+        Logger.log('Test', 'Sending custom message via API', { userMessage });
+        
+        // Create payload from template
+        const payload = window.createMessageFromTemplate(userMessage);
+        if (!payload) {
+            Logger.error('Test', 'Failed to create payload from template');
+            return null;
+        }
+        
+        try {
+            // Use the captured request details to make the API call
+            const response = await originalFetch(capturedRequestDetails.url, {
+                method: capturedRequestDetails.method,
+                headers: capturedRequestDetails.headers,
+                body: JSON.stringify(payload)
+            });
+            
+            Logger.log('Test', 'API call completed', { 
+                status: response.status,
+                statusText: response.statusText 
+            });
+            
+            // Try to parse response
+            try {
+                const responseData = await response.json();
+                Logger.log('Test', 'API response data', responseData);
+                return responseData;
+            } catch (e) {
+                Logger.log('Test', 'Could not parse response as JSON');
+                const responseText = await response.text();
+                Logger.log('Test', 'Response as text', responseText);
+                return responseText;
+            }
+            
+        } catch (error) {
+            Logger.error('Test', 'API call failed', error);
+            return null;
+        }
+    }
+
+    // Test sequence function
+    async function startTestSequence() {
+        Logger.log('Test', 'Starting test sequence - will send 2 custom messages');
+        
+        // Test message 1
+        Logger.log('Test', 'TEST 1: Sending first custom message');
+        const response1 = await sendMessageWithTemplate('This is my first test message via direct API call');
+        
+        // Wait 10 seconds
+        Logger.log('Test', 'Waiting 10 seconds before second test...');
+        setTimeout(async () => {
+            // Test message 2
+            Logger.log('Test', 'TEST 2: Sending second custom message');
+            const response2 = await sendMessageWithTemplate('This is my second test message, sent 10 seconds after the first one');
+            
+            Logger.log('Test', 'Test sequence completed!');
+            Logger.log('Test', 'Check the AI interface to see if the messages appeared');
+            
+        }, 10000);
+    }
 
     // Start the experiment
     Logger.log('Init', 'Experiment script loaded, starting in 2 seconds...');
