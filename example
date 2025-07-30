@@ -3,7 +3,7 @@
 
     // Configuration
     const CONFIG = {
-        STORAGE_KEY: 'ai_chat_overlay_api_data',
+        STORAGE_KEY: 'ai_chat_overlay_exact_data',
         RETRY_ATTEMPTS: 3,
         RETRY_DELAY: 2000,
         HEARTBEAT_INTERVAL: 60000, // 60 seconds
@@ -29,39 +29,19 @@
         }
     };
 
-    // Utility functions
-    const Utils = {
-        generateUUID: () => {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0;
-                const v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        },
-        
-        get13DigitTimestamp: () => {
-            return Date.now();
-        },
-        
-        get10DigitTimestamp: () => {
-            return Math.floor(Date.now() / 1000);
-        }
-    };
-
-    // API Template Manager
-    class APITemplateManager {
+    // Exact Copy API Manager
+    class ExactCopyAPIManager {
         constructor() {
-            Logger.log('APITemplate', 'Initializing API Template Manager');
-            this.template = null;
-            this.requestDetails = null;
+            Logger.log('ExactAPI', 'Initializing Exact Copy API Manager');
+            this.capturedRequest = null;
             this.isInitialized = false;
             this.originalFetch = null;
         }
 
         async initialize() {
-            Logger.log('APITemplate', 'Starting template capture process');
+            Logger.log('ExactAPI', 'Starting exact request capture process');
             
-            // Override fetch to capture template
+            // Override fetch to capture the exact request
             this.originalFetch = window.fetch;
             const self = this;
             
@@ -69,31 +49,30 @@
                 const url = args[0];
                 const options = args[1] || {};
                 
-                // Check for target API call
+                // Check for target API call and capture it exactly
                 if (typeof url === 'string' && url.includes('/api/v1/chats/new') && !self.isInitialized) {
-                    Logger.log('APITemplate', 'Capturing API template', { url });
+                    Logger.log('ExactAPI', 'Capturing exact API request', { url });
                     
                     if (options.body) {
                         try {
                             const requestBody = JSON.parse(options.body);
                             
-                            // Capture request details
-                            self.requestDetails = {
+                            // Capture the EXACT request - no modifications
+                            self.capturedRequest = {
                                 url: url,
                                 method: options.method || 'POST',
                                 headers: self.extractHeaders(options.headers),
-                                basePayload: requestBody
+                                originalPayload: requestBody,
+                                originalMessage: self.extractMessageContent(requestBody)
                             };
                             
-                            // Create template by removing specific message content
-                            self.template = JSON.parse(JSON.stringify(requestBody));
-                            self.cleanTemplate();
-                            
                             self.isInitialized = true;
-                            Logger.log('APITemplate', 'Template captured successfully');
+                            Logger.log('ExactAPI', 'Exact request captured successfully', {
+                                originalMessage: self.capturedRequest.originalMessage
+                            });
                             
                         } catch (e) {
-                            Logger.error('APITemplate', 'Failed to capture template', e);
+                            Logger.error('ExactAPI', 'Failed to capture exact request', e);
                         }
                     }
                 }
@@ -102,10 +81,10 @@
                 return self.originalFetch.apply(this, args);
             };
             
-            // Send dummy message to trigger template capture
+            // Send dummy message to trigger request capture
             await this.sendDummyMessage();
             
-            // Wait for template to be captured
+            // Wait for request to be captured
             let attempts = 0;
             while (!this.isInitialized && attempts < 50) {
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -113,10 +92,10 @@
             }
             
             if (this.isInitialized) {
-                Logger.log('APITemplate', 'Template initialization complete');
+                Logger.log('ExactAPI', 'Exact request capture complete');
                 return true;
             } else {
-                Logger.error('APITemplate', 'Failed to initialize template');
+                Logger.error('ExactAPI', 'Failed to capture exact request');
                 return false;
             }
         }
@@ -135,27 +114,45 @@
             return result;
         }
 
-        cleanTemplate() {
-            // Remove dummy content and replace with placeholders
-            if (this.template.chat && this.template.chat.messages) {
-                this.template.chat.messages.forEach(msg => {
+        extractMessageContent(payload) {
+            // Find the user message content in the payload
+            if (payload.chat && payload.chat.messages) {
+                for (const msg of payload.chat.messages) {
                     if (msg.role === 'user') {
-                        msg.content = '{{USER_MESSAGE}}';
+                        return msg.content;
                     }
-                });
-                
-                if (this.template.chat.history && this.template.chat.history.messages) {
-                    Object.values(this.template.chat.history.messages).forEach(msg => {
-                        if (msg.role === 'user') {
-                            msg.content = '{{USER_MESSAGE}}';
-                        }
-                    });
                 }
             }
+            return null;
+        }
+
+        replaceMessageContent(payload, newMessage) {
+            // Create exact copy and replace only the message content
+            const exactCopy = JSON.parse(JSON.stringify(payload));
+            
+            // Replace in messages array
+            if (exactCopy.chat && exactCopy.chat.messages) {
+                exactCopy.chat.messages.forEach(msg => {
+                    if (msg.role === 'user' && msg.content === this.capturedRequest.originalMessage) {
+                        msg.content = newMessage;
+                    }
+                });
+            }
+            
+            // Replace in history
+            if (exactCopy.chat && exactCopy.chat.history && exactCopy.chat.history.messages) {
+                Object.values(exactCopy.chat.history.messages).forEach(msg => {
+                    if (msg.role === 'user' && msg.content === this.capturedRequest.originalMessage) {
+                        msg.content = newMessage;
+                    }
+                });
+            }
+            
+            return exactCopy;
         }
 
         async sendDummyMessage() {
-            Logger.log('APITemplate', 'Sending dummy message to capture template');
+            Logger.log('ExactAPI', 'Sending dummy message to capture exact request');
             
             try {
                 // Wait for new chat button and click it
@@ -164,21 +161,21 @@
                 
                 // Wait for input and send dummy message
                 const chatInput = await this.waitForElement('#chat-input');
-                chatInput.textContent = 'template';
+                chatInput.textContent = 'capture_exact';
                 
                 // Click submit
                 const submitBtn = await this.waitForElement('#submit-prompt-btn');
                 submitBtn.click();
                 
-                Logger.log('APITemplate', 'Dummy message sent');
+                Logger.log('ExactAPI', 'Dummy message sent for exact capture');
                 
             } catch (error) {
-                Logger.error('APITemplate', 'Failed to send dummy message', error);
+                Logger.error('ExactAPI', 'Failed to send dummy message', error);
             }
         }
 
         async waitForElement(selector, timeout = 30000) {
-            Logger.log('APITemplate', `Waiting for element: ${selector}`, { timeoutMs: timeout });
+            Logger.log('ExactAPI', `Waiting for element: ${selector}`, { timeoutMs: timeout });
             
             return new Promise((resolve, reject) => {
                 const startTime = Date.now();
@@ -190,40 +187,19 @@
                     const elapsed = Date.now() - startTime;
                     
                     if (element) {
-                        Logger.log('APITemplate', `Element found: ${selector}`, { 
+                        Logger.log('ExactAPI', `Element found: ${selector}`, { 
                             attempts, 
-                            elapsedMs: elapsed,
-                            elementType: element.tagName
+                            elapsedMs: elapsed
                         });
                         resolve(element);
                         return;
                     }
                     
-                    // Log every 5 seconds while waiting
-                    if (attempts % 50 === 0) {
-                        Logger.log('APITemplate', `Still waiting for: ${selector}`, { 
-                            attempts, 
-                            elapsedMs: elapsed 
-                        });
-                        
-                        // Also log what elements we CAN find with similar IDs
-                        const similarElements = document.querySelectorAll('[id*="submit"], [id*="chat"], [id*="new"]');
-                        const foundIds = Array.from(similarElements).map(el => el.id).filter(id => id);
-                        Logger.log('APITemplate', 'Similar elements found', foundIds);
-                    }
-                    
                     if (elapsed >= timeout) {
-                        Logger.error('APITemplate', `Timeout waiting for element: ${selector}`, {
+                        Logger.error('ExactAPI', `Timeout waiting for element: ${selector}`, {
                             attempts,
-                            elapsedMs: elapsed,
-                            timeoutMs: timeout
+                            elapsedMs: elapsed
                         });
-                        
-                        // Final check for similar elements
-                        const allElements = document.querySelectorAll('[id*="submit"], [id*="chat"], [id*="new"]');
-                        const allIds = Array.from(allElements).map(el => el.id).filter(id => id);
-                        Logger.error('APITemplate', 'All similar elements at timeout', allIds);
-                        
                         reject(new Error(`Timeout waiting for element: ${selector}`));
                         return;
                     }
@@ -235,96 +211,46 @@
             });
         }
 
-        createPayload(userMessage, conversationHistory = []) {
-            if (!this.template) {
-                Logger.error('APITemplate', 'No template available');
+        async sendMessage(userMessage) {
+            if (!this.isInitialized) {
+                Logger.error('ExactAPI', 'Exact request not captured yet');
                 return null;
             }
             
-            Logger.log('APITemplate', 'Creating payload for message', { 
-                messageLength: userMessage.length,
-                historyLength: conversationHistory.length
+            Logger.log('ExactAPI', 'Sending message with exact copy method', { 
+                userMessage: userMessage.substring(0, 50) + '...'
             });
             
-            // Clone template
-            const payload = JSON.parse(JSON.stringify(this.template));
-            
-            // Update timestamps
-            const timestamp13 = Utils.get13DigitTimestamp();
-            const timestamp10 = Utils.get10DigitTimestamp();
-            payload.chat.timestamp = timestamp13;
-            
-            // Create new message ID
-            const messageId = Utils.generateUUID();
-            
-            // Update message content and IDs
-            if (payload.chat.messages) {
-                payload.chat.messages.forEach(msg => {
-                    if (msg.content === '{{USER_MESSAGE}}') {
-                        msg.content = userMessage;
-                        msg.id = messageId;
-                        msg.timestamp = timestamp10;
-                    }
-                });
-            }
-            
-            // Update history
-            if (payload.chat.history) {
-                payload.chat.history.currentId = messageId;
-                
-                if (payload.chat.history.messages) {
-                    const newMessages = {};
-                    Object.entries(payload.chat.history.messages).forEach(([key, msg]) => {
-                        if (msg.content === '{{USER_MESSAGE}}') {
-                            msg.content = userMessage;
-                            msg.id = messageId;
-                            msg.timestamp = timestamp10;
-                            newMessages[messageId] = msg;
-                        } else {
-                            newMessages[key] = msg;
-                        }
-                    });
-                    payload.chat.history.messages = newMessages;
-                }
-            }
-            
-            // TODO: Add conversation history handling
-            
-            Logger.log('APITemplate', 'Payload created successfully');
-            return payload;
-        }
-
-        async sendMessage(userMessage, conversationHistory = []) {
-            if (!this.isInitialized) {
-                Logger.error('APITemplate', 'Template not initialized');
-                return null;
-            }
-            
-            const payload = this.createPayload(userMessage, conversationHistory);
-            if (!payload) {
-                return null;
-            }
-            
             try {
-                Logger.log('APITemplate', 'Sending message via API');
+                // Create exact copy with only message content replaced
+                const exactPayload = this.replaceMessageContent(
+                    this.capturedRequest.originalPayload, 
+                    userMessage
+                );
                 
-                const response = await this.originalFetch(this.requestDetails.url, {
-                    method: this.requestDetails.method,
-                    headers: this.requestDetails.headers,
-                    body: JSON.stringify(payload)
+                Logger.log('ExactAPI', 'Exact payload created', {
+                    originalMessage: this.capturedRequest.originalMessage,
+                    newMessage: userMessage
                 });
                 
-                Logger.log('APITemplate', 'API response received', { 
+                // Send with exact same headers and URL
+                const response = await this.originalFetch(this.capturedRequest.url, {
+                    method: this.capturedRequest.method,
+                    headers: this.capturedRequest.headers,
+                    body: JSON.stringify(exactPayload)
+                });
+                
+                Logger.log('ExactAPI', 'Exact copy API response received', { 
                     status: response.status 
                 });
                 
                 const responseData = await response.json();
-                Logger.log('APITemplate', 'Message sent successfully', responseData);
+                Logger.log('ExactAPI', 'Message sent successfully with exact copy', responseData);
                 
                 return responseData;
                 
             } catch (error) {
-                Logger.error('APITemplate', 'Failed to send message', error);
+                Logger.error('ExactAPI', 'Failed to send message with exact copy', error);
                 return null;
             }
         }
@@ -389,46 +315,45 @@
         }
     }
 
-    // Simplified UI
-    function createSimplifiedUI() {
-        // Remove existing overlay
-        const existing = document.getElementById('ai-chat-overlay-api');
+    // UI Creation (same as before)
+    function createExactCopyUI() {
+        const existing = document.getElementById('ai-chat-overlay-exact');
         if (existing) existing.remove();
 
         const overlay = document.createElement('div');
-        overlay.id = 'ai-chat-overlay-api';
+        overlay.id = 'ai-chat-overlay-exact';
         overlay.innerHTML = `
             <div class="chat-container">
                 <div class="chat-header">
-                    <h1>AI Chat (API Mode)</h1>
+                    <h1>AI Chat (Exact Copy Mode)</h1>
                     <div class="header-controls">
-                        <button id="new-chat-api" class="btn">New Chat</button>
-                        <button id="close-overlay-api" class="btn btn-danger">×</button>
+                        <button id="new-chat-exact" class="btn">New Chat</button>
+                        <button id="close-overlay-exact" class="btn btn-danger">×</button>
                     </div>
                 </div>
                 
                 <div class="chat-content">
                     <div class="sidebar">
                         <h3>Previous Chats</h3>
-                        <div id="chat-list-api" class="chat-list"></div>
+                        <div id="chat-list-exact" class="chat-list"></div>
                     </div>
                     
                     <div class="main-chat">
-                        <div id="messages-api" class="messages"></div>
+                        <div id="messages-exact" class="messages"></div>
                         <div class="input-area">
-                            <textarea id="user-input-api" placeholder="Type your message..." rows="3"></textarea>
-                            <button id="send-btn-api" class="btn btn-primary">Send</button>
+                            <textarea id="user-input-exact" placeholder="Type your message..." rows="3"></textarea>
+                            <button id="send-btn-exact" class="btn btn-primary">Send</button>
                         </div>
-                        <div id="status-api" class="status">Initializing API template...</div>
+                        <div id="status-exact" class="status">Capturing exact API request...</div>
                     </div>
                 </div>
             </div>
         `;
 
-        // Add CSS (same styling as before)
+        // Add same CSS styling
         const style = document.createElement('style');
         style.textContent = `
-            #ai-chat-overlay-api {
+            #ai-chat-overlay-exact {
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -561,7 +486,7 @@
                 align-items: flex-end;
             }
 
-            #user-input-api {
+            #user-input-exact {
                 flex: 1;
                 background: #1a1a1a;
                 border: 1px solid #444;
@@ -574,7 +499,7 @@
                 min-height: 60px;
             }
 
-            #user-input-api:focus {
+            #user-input-exact:focus {
                 outline: none;
                 border-color: #0d7377;
             }
@@ -652,10 +577,10 @@
     }
 
     // Main App
-    class SimplifiedChatApp {
+    class ExactCopyChatApp {
         constructor() {
-            Logger.log('App', 'Initializing Simplified Chat App');
-            this.apiManager = new APITemplateManager();
+            Logger.log('App', 'Initializing Exact Copy Chat App');
+            this.apiManager = new ExactCopyAPIManager();
             this.chatManager = new ChatManager();
             this.overlay = null;
             this.elements = {};
@@ -667,34 +592,34 @@
             Logger.log('App', 'Starting initialization');
             
             // Create UI
-            this.overlay = createSimplifiedUI();
+            this.overlay = createExactCopyUI();
             this.bindElements();
             this.bindEvents();
             
-            // Initialize API template
-            this.updateStatus('Initializing API template...', 'processing');
+            // Initialize exact copy capture
+            this.updateStatus('Capturing exact API request...', 'processing');
             const success = await this.apiManager.initialize();
             
             if (success) {
-                this.updateStatus('Ready - API template initialized', 'ready');
+                this.updateStatus('Ready - Exact request captured', 'ready');
                 this.updateUI();
                 this.startHeartbeat();
                 Logger.log('App', 'Initialization complete');
             } else {
-                this.updateStatus('Failed to initialize API template', 'error');
+                this.updateStatus('Failed to capture exact request', 'error');
                 Logger.error('App', 'Initialization failed');
             }
         }
 
         bindElements() {
             this.elements = {
-                newChatBtn: document.getElementById('new-chat-api'),
-                closeBtn: document.getElementById('close-overlay-api'),
-                chatList: document.getElementById('chat-list-api'),
-                messages: document.getElementById('messages-api'),
-                userInput: document.getElementById('user-input-api'),
-                sendBtn: document.getElementById('send-btn-api'),
-                status: document.getElementById('status-api')
+                newChatBtn: document.getElementById('new-chat-exact'),
+                closeBtn: document.getElementById('close-overlay-exact'),
+                chatList: document.getElementById('chat-list-exact'),
+                messages: document.getElementById('messages-exact'),
+                userInput: document.getElementById('user-input-exact'),
+                sendBtn: document.getElementById('send-btn-exact'),
+                status: document.getElementById('status-exact')
             };
         }
 
@@ -783,114 +708,84 @@
             
             if (isHeartbeat) {
                 message = CONFIG.HEARTBEAT_MESSAGE;
-                Logger.log('Heartbeat', 'Sending heartbeat message to keep session alive');
+                Logger.log('Heartbeat', 'Sending heartbeat message');
             } else {
                 message = input.value.trim();
                 if (!message) return;
                 
-                // Update activity time for user messages
                 this.updateActivity();
             }
 
-            // Ensure we have a current chat
             if (!this.chatManager.getCurrentChat()) {
                 this.createNewChat();
             }
 
-            // Disable input for user messages only
             if (!isHeartbeat) {
                 this.elements.sendBtn.disabled = true;
                 input.disabled = true;
             }
 
             try {
-                // Add user message (don't add heartbeat messages to chat history)
                 if (!isHeartbeat) {
                     this.chatManager.addMessage('user', message);
                     this.updateMessages();
-                    
-                    // Clear input
                     input.value = '';
+                    this.updateStatus('Sending message via exact copy...', 'processing');
                 }
                 
-                if (!isHeartbeat) {
-                    this.updateStatus('Sending message via API...', 'processing');
-                }
-                
-                // Send via API
                 const response = await this.apiManager.sendMessage(message);
                 
                 if (response) {
                     if (isHeartbeat) {
-                        Logger.log('Heartbeat', 'Heartbeat message sent successfully');
-                        // Don't show heartbeat responses in the UI
+                        Logger.log('Heartbeat', 'Heartbeat sent successfully');
                     } else {
-                        // For now, just show that we got a response
-                        // TODO: Parse actual AI response from the API
-                        this.chatManager.addMessage('assistant', 'Message sent successfully via API');
+                        this.chatManager.addMessage('assistant', 'Message sent successfully via exact copy');
                         this.updateMessages();
                         this.updateStatus('Message sent successfully', 'success');
                     }
                 } else {
-                    if (isHeartbeat) {
-                        Logger.warn('Heartbeat', 'Heartbeat message failed');
-                    } else {
+                    if (!isHeartbeat) {
                         this.updateStatus('Failed to send message', 'error');
                     }
                 }
                 
             } catch (error) {
-                if (isHeartbeat) {
-                    Logger.error('Heartbeat', 'Heartbeat failed', error);
-                } else {
+                if (!isHeartbeat) {
                     Logger.error('App', 'Failed to send message', error);
                     this.updateStatus(`Error: ${error.message}`, 'error');
                 }
             } finally {
-                // Re-enable input for user messages only
                 if (!isHeartbeat) {
                     this.elements.sendBtn.disabled = false;
                     input.disabled = false;
-                    input.focus();
+                    this.elements.userInput.focus();
                 }
             }
         }
 
         updateActivity() {
             this.lastActivityTime = Date.now();
-            Logger.log('Heartbeat', 'Activity updated - heartbeat timer reset');
         }
 
         startHeartbeat() {
-            Logger.log('Heartbeat', 'Starting heartbeat system', { 
-                intervalMs: CONFIG.HEARTBEAT_INTERVAL 
-            });
-            
-            // Clear any existing timer
             if (this.heartbeatTimer) {
                 clearInterval(this.heartbeatTimer);
             }
             
-            // Set up heartbeat check every 10 seconds
             this.heartbeatTimer = setInterval(() => {
                 const timeSinceActivity = Date.now() - this.lastActivityTime;
                 
                 if (timeSinceActivity >= CONFIG.HEARTBEAT_INTERVAL) {
-                    Logger.log('Heartbeat', 'No activity detected, sending heartbeat', {
-                        timeSinceActivityMs: timeSinceActivity
-                    });
-                    
-                    this.sendMessage(true); // Send heartbeat
-                    this.updateActivity(); // Reset timer
+                    this.sendMessage(true);
+                    this.updateActivity();
                 }
-            }, 10000); // Check every 10 seconds
+            }, 10000);
         }
 
         stopHeartbeat() {
             if (this.heartbeatTimer) {
                 clearInterval(this.heartbeatTimer);
                 this.heartbeatTimer = null;
-                Logger.log('Heartbeat', 'Heartbeat system stopped');
             }
         }
 
@@ -902,15 +797,14 @@
         }
     }
 
-    // Initialize the simplified app
-    Logger.log('Main', 'Loading Simplified AI Chat Overlay (API Mode)');
-    const app = new SimplifiedChatApp();
+    // Initialize the exact copy app
+    Logger.log('Main', 'Loading Exact Copy AI Chat Overlay');
+    const app = new ExactCopyChatApp();
     app.init();
 
-    // Make it globally accessible
-    window.aiChatOverlayAPI = app;
+    window.aiChatOverlayExact = app;
 
-    Logger.log('Main', 'Simplified AI Chat Overlay loaded successfully');
-    console.log('Simplified AI Chat Overlay loaded! Type window.aiChatOverlayAPI to access the app instance.');
+    Logger.log('Main', 'Exact Copy AI Chat Overlay loaded successfully');
+    console.log('Exact Copy AI Chat Overlay loaded! Access via window.aiChatOverlayExact');
 
 })();
