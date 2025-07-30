@@ -5,7 +5,9 @@
     const CONFIG = {
         STORAGE_KEY: 'ai_chat_overlay_api_data',
         RETRY_ATTEMPTS: 3,
-        RETRY_DELAY: 2000
+        RETRY_DELAY: 2000,
+        HEARTBEAT_INTERVAL: 60000, // 60 seconds
+        HEARTBEAT_MESSAGE: 'respond "k"'
     };
 
     // Logging utility
@@ -657,6 +659,8 @@
             this.chatManager = new ChatManager();
             this.overlay = null;
             this.elements = {};
+            this.lastActivityTime = Date.now();
+            this.heartbeatTimer = null;
         }
 
         async init() {
@@ -674,6 +678,7 @@
             if (success) {
                 this.updateStatus('Ready - API template initialized', 'ready');
                 this.updateUI();
+                this.startHeartbeat();
                 Logger.log('App', 'Initialization complete');
             } else {
                 this.updateStatus('Failed to initialize API template', 'error');
@@ -772,56 +777,125 @@
             this.elements.status.className = `status ${type}`;
         }
 
-        async sendMessage() {
+        async sendMessage(isHeartbeat = false) {
             const input = this.elements.userInput;
-            const message = input.value.trim();
+            let message;
             
-            if (!message) return;
+            if (isHeartbeat) {
+                message = CONFIG.HEARTBEAT_MESSAGE;
+                Logger.log('Heartbeat', 'Sending heartbeat message to keep session alive');
+            } else {
+                message = input.value.trim();
+                if (!message) return;
+                
+                // Update activity time for user messages
+                this.updateActivity();
+            }
 
             // Ensure we have a current chat
             if (!this.chatManager.getCurrentChat()) {
                 this.createNewChat();
             }
 
-            // Disable input
-            this.elements.sendBtn.disabled = true;
-            input.disabled = true;
+            // Disable input for user messages only
+            if (!isHeartbeat) {
+                this.elements.sendBtn.disabled = true;
+                input.disabled = true;
+            }
 
             try {
-                // Add user message
-                this.chatManager.addMessage('user', message);
-                this.updateMessages();
+                // Add user message (don't add heartbeat messages to chat history)
+                if (!isHeartbeat) {
+                    this.chatManager.addMessage('user', message);
+                    this.updateMessages();
+                    
+                    // Clear input
+                    input.value = '';
+                }
                 
-                // Clear input
-                input.value = '';
-                
-                this.updateStatus('Sending message via API...', 'processing');
+                if (!isHeartbeat) {
+                    this.updateStatus('Sending message via API...', 'processing');
+                }
                 
                 // Send via API
                 const response = await this.apiManager.sendMessage(message);
                 
                 if (response) {
-                    // For now, just show that we got a response
-                    // TODO: Parse actual AI response from the API
-                    this.chatManager.addMessage('assistant', 'Message sent successfully via API');
-                    this.updateMessages();
-                    this.updateStatus('Message sent successfully', 'success');
+                    if (isHeartbeat) {
+                        Logger.log('Heartbeat', 'Heartbeat message sent successfully');
+                        // Don't show heartbeat responses in the UI
+                    } else {
+                        // For now, just show that we got a response
+                        // TODO: Parse actual AI response from the API
+                        this.chatManager.addMessage('assistant', 'Message sent successfully via API');
+                        this.updateMessages();
+                        this.updateStatus('Message sent successfully', 'success');
+                    }
                 } else {
-                    this.updateStatus('Failed to send message', 'error');
+                    if (isHeartbeat) {
+                        Logger.warn('Heartbeat', 'Heartbeat message failed');
+                    } else {
+                        this.updateStatus('Failed to send message', 'error');
+                    }
                 }
                 
             } catch (error) {
-                Logger.error('App', 'Failed to send message', error);
-                this.updateStatus(`Error: ${error.message}`, 'error');
+                if (isHeartbeat) {
+                    Logger.error('Heartbeat', 'Heartbeat failed', error);
+                } else {
+                    Logger.error('App', 'Failed to send message', error);
+                    this.updateStatus(`Error: ${error.message}`, 'error');
+                }
             } finally {
-                // Re-enable input
-                this.elements.sendBtn.disabled = false;
-                input.disabled = false;
-                input.focus();
+                // Re-enable input for user messages only
+                if (!isHeartbeat) {
+                    this.elements.sendBtn.disabled = false;
+                    input.disabled = false;
+                    input.focus();
+                }
+            }
+        }
+
+        updateActivity() {
+            this.lastActivityTime = Date.now();
+            Logger.log('Heartbeat', 'Activity updated - heartbeat timer reset');
+        }
+
+        startHeartbeat() {
+            Logger.log('Heartbeat', 'Starting heartbeat system', { 
+                intervalMs: CONFIG.HEARTBEAT_INTERVAL 
+            });
+            
+            // Clear any existing timer
+            if (this.heartbeatTimer) {
+                clearInterval(this.heartbeatTimer);
+            }
+            
+            // Set up heartbeat check every 10 seconds
+            this.heartbeatTimer = setInterval(() => {
+                const timeSinceActivity = Date.now() - this.lastActivityTime;
+                
+                if (timeSinceActivity >= CONFIG.HEARTBEAT_INTERVAL) {
+                    Logger.log('Heartbeat', 'No activity detected, sending heartbeat', {
+                        timeSinceActivityMs: timeSinceActivity
+                    });
+                    
+                    this.sendMessage(true); // Send heartbeat
+                    this.updateActivity(); // Reset timer
+                }
+            }, 10000); // Check every 10 seconds
+        }
+
+        stopHeartbeat() {
+            if (this.heartbeatTimer) {
+                clearInterval(this.heartbeatTimer);
+                this.heartbeatTimer = null;
+                Logger.log('Heartbeat', 'Heartbeat system stopped');
             }
         }
 
         close() {
+            this.stopHeartbeat();
             if (this.overlay) {
                 this.overlay.remove();
             }
