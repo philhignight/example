@@ -109,11 +109,11 @@
             Logger.log('ChatManager', 'Chat selected successfully');
         }
 
-        addMessage(role, content) {
-            Logger.log('ChatManager', 'Adding message', { role, contentLength: content.length });
+        addMessage(role, content, isHtml = false) {
+            Logger.log('ChatManager', 'Adding message', { role, contentLength: content.length, isHtml });
             const chat = this.getCurrentChat();
             if (chat) {
-                chat.messages.push({ role, content, timestamp: Date.now() });
+                chat.messages.push({ role, content, isHtml, timestamp: Date.now() });
                 this.saveData();
                 Logger.log('ChatManager', 'Message added successfully', { 
                     role, 
@@ -150,9 +150,16 @@ ${newMessage}
 
             let conversation = 'Please create the next assistant message for this conversation.\n\n';
             
-            // Add conversation history
+            // Add conversation history - convert HTML to text for prompts
             for (const msg of chat.messages) {
-                conversation += `# ${msg.role.toUpperCase()}\n\n${msg.content}\n\n`;
+                let content = msg.content;
+                if (msg.isHtml) {
+                    // Convert HTML to plain text for the prompt
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = content;
+                    content = tempDiv.textContent || tempDiv.innerText || '';
+                }
+                conversation += `# ${msg.role.toUpperCase()}\n\n${content}\n\n`;
             }
             
             // Add new user message
@@ -286,17 +293,14 @@ ${newMessage}
                 });
                 
                 const responseHtml = responseSection.innerHTML;
-                const responseText = responseSection.textContent || responseSection.innerText;
                 
                 Logger.log('InterfaceAutomator', 'Response extracted successfully', {
                     htmlLength: responseHtml.length,
-                    textLength: responseText.length,
-                    textPreview: responseText.substring(0, 200) + '...'
+                    htmlPreview: responseHtml.substring(0, 200) + '...'
                 });
                 
                 return {
-                    html: responseHtml,
-                    text: responseText.trim()
+                    html: responseHtml
                 };
                 
             } catch (error) {
@@ -758,10 +762,16 @@ ${newMessage}
                 return;
             }
 
-            currentChat.messages.forEach((msg, index) => {
+            currentChat.messages.forEach((msg) => {
                 const messageEl = document.createElement('div');
                 messageEl.className = `message ${msg.role}`;
-                messageEl.textContent = msg.content;
+                
+                if (msg.isHtml) {
+                    messageEl.innerHTML = msg.content;
+                } else {
+                    messageEl.textContent = msg.content;
+                }
+                
                 messages.appendChild(messageEl);
             });
 
@@ -823,13 +833,12 @@ ${newMessage}
                 Logger.log('ChatApp', 'Sending message to existing interface');
                 const response = await this.automator.sendMessageWithRetry(prompt);
                 Logger.log('ChatApp', 'Response received from existing interface', {
-                    responseTextLength: response.text.length,
                     responseHtmlLength: response.html.length
                 });
                 
-                // Add assistant response
+                // Add assistant response as HTML
                 Logger.log('ChatApp', 'Adding assistant response to chat');
-                this.chatManager.addMessage('assistant', response.text);
+                this.chatManager.addMessage('assistant', response.html, true);
                 this.updateMessages();
                 
                 this.updateStatus('Message sent successfully', 'success');
