@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 06:50:35 PM UTC 2025
+// Generated on Thu Jul 31 07:40:18 PM UTC 2025
 
 // ===== api-manager.js =====
 (function() {
@@ -1223,7 +1223,7 @@
 
                 const result = await this.apiManager.sendMessage(
                     userMessage,
-                    projectChat ? projectChat.messages.slice(0, -1) : [], // Exclude just-added user message
+                    projectChat ? projectChat.messages.slice(0, -1) : [], // All previous messages except the just-added user message
                     existingConversationId,
                     // onChunk
                     (chunk) => {
@@ -1293,11 +1293,21 @@
                             
                             // Save the complete response
                             const completeOutput = this.streamingParser.getCompleteOutput();
-                            if (completeOutput && projectChat) {
+                            if (completeOutput && completeOutput.trim() && projectChat) {
                                 projectChat.messages.push({
                                     role: 'assistant',
-                                    content: completeOutput,
+                                    content: completeOutput.trim(),
                                     timestamp: Date.now()
+                                });
+                                this.logger.log('App', 'Assistant response saved to project chat', {
+                                    projectId: this.currentProject,
+                                    responseLength: completeOutput.trim().length,
+                                    totalMessages: projectChat.messages.length
+                                });
+                            } else {
+                                this.logger.warn('App', 'Empty assistant response - not saving', {
+                                    completeOutput,
+                                    hasProjectChat: !!projectChat
                                 });
                             }
                             
