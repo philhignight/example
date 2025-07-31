@@ -1,107 +1,27 @@
+// Streaming AI Chat Overlay - Combined Build
+// Generated on Thu Jul 31 06:02:05 PM UTC 2025
+
+// ===== api-manager.js =====
 (function() {
     'use strict';
 
-    // Page replacement will eliminate notification popups entirely
-    
-    // Override fetch to block requests not from our app
-    function blockNonAppRequests() {
-        const originalFetch = window.fetch;
-        const APP_ENDPOINTS = [
-            '/api/v1/chats/new',
-            '/api/v1/chats/',
-            '/api/chat/completions'
-        ];
-        
-        window.fetch = function(url, options = {}) {
-            // Check if this request is from our app
-            const isAppRequest = APP_ENDPOINTS.some(endpoint => {
-                if (typeof url === 'string') {
-                    return url.includes(endpoint);
-                } else if (url && url.href) {
-                    return url.href.includes(endpoint);
-                }
-                return false;
-            });
-            
-            if (isAppRequest) {
-                Logger.log('FetchBlock', 'Allowing app request', { url: url.toString() });
-                return originalFetch.call(this, url, options);
-            } else {
-                Logger.log('FetchBlock', 'Blocking non-app request', { url: url.toString() });
-                // Return a rejected promise to block the request
-                return Promise.reject(new Error('Request blocked: not from streaming chat app'));
-            }
-        };
-        
-        Logger.log('FetchBlock', 'Fetch blocking enabled - only app requests allowed');
-    }
-    
-    // Configuration
-    const CONFIG = {
-        STORAGE_KEY: 'ai_chat_overlay_streaming_data',
-        PROJECTS_KEY: 'ai_chat_projects',
-        HEARTBEAT_INTERVAL: 60000, // 60 seconds
-        HEARTBEAT_MESSAGE: 'respond "k"',
-        OVERALL_TIMEOUT: 10 * 60 * 1000, // 10 minutes
-        POLLING_INTERVAL: 1000, // 1 second
-        SESSION_ID: '11111111111111111111', // 20 ones
-        NEW_CHAT_ENDPOINT: '/api/v1/chats/new',
-        GET_CHAT_ENDPOINT: '/api/v1/chats/',
-        COMPLETIONS_ENDPOINT: '/api/chat/completions'
-    };
-
-    // Logging utility
-    const Logger = {
-        log: (category, message, data = null) => {
-            const timestamp = new Date().toISOString();
-            const logMessage = `[${timestamp}] [${category}] ${message}`;
-            console.log(logMessage, data || '');
-        },
-        error: (category, message, error = null) => {
-            const timestamp = new Date().toISOString();
-            const logMessage = `[${timestamp}] [${category}] ERROR: ${message}`;
-            console.error(logMessage, error || '');
-        },
-        warn: (category, message, data = null) => {
-            const timestamp = new Date().toISOString();
-            const logMessage = `[${timestamp}] [${category}] WARNING: ${message}`;
-            console.warn(logMessage, data || '');
-        }
-    };
-
-    // Utility functions
-    const Utils = {
-        generateUUID: () => {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0;
-                const v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        },
-        
-        get13DigitTimestamp: () => {
-            return Date.now();
-        },
-        
-        get10DigitTimestamp: () => {
-            return Math.floor(Date.now() / 1000);
-        }
-    };
-
-    // Streaming API Manager - 3-step flow
     class StreamingAPIManager {
         constructor() {
-            Logger.log('StreamingAPI', 'Initializing Streaming API Manager');
+            this.logger = window.StreamingChatLogger;
+            this.config = window.StreamingChatConfig;
+            this.utils = window.StreamingChatUtils;
+            
+            this.logger.log('StreamingAPI', 'Initializing Streaming API Manager');
             this.token = this.getAuthToken();
             this.isReady = !!this.token;
             this.activityTimeout = null;
             
             if (this.token) {
-                Logger.log('StreamingAPI', 'Auth token found', { 
+                this.logger.log('StreamingAPI', 'Auth token found', { 
                     tokenPreview: this.token.substring(0, 20) + '...' 
                 });
             } else {
-                Logger.error('StreamingAPI', 'No auth token found in localStorage');
+                this.logger.error('StreamingAPI', 'No auth token found in localStorage');
             }
         }
 
@@ -110,7 +30,7 @@
                 const token = localStorage.getItem('token');
                 return token;
             } catch (e) {
-                Logger.error('StreamingAPI', 'Failed to retrieve auth token', e);
+                this.logger.error('StreamingAPI', 'Failed to retrieve auth token', e);
                 return null;
             }
         }
@@ -123,7 +43,7 @@
             }
             
             if (currentToken !== this.token) {
-                Logger.log('StreamingAPI', 'Auth token updated');
+                this.logger.log('StreamingAPI', 'Auth token updated');
                 this.token = currentToken;
             }
             
@@ -137,9 +57,9 @@
             }
             
             this.activityTimeout = setTimeout(() => {
-                Logger.error('StreamingAPI', 'Overall timeout reached - 10 minutes of no activity');
+                this.logger.error('StreamingAPI', 'Overall timeout reached - 10 minutes of no activity');
                 throw new Error('Request timeout - 10 minutes of no activity');
-            }, CONFIG.OVERALL_TIMEOUT);
+            }, this.config.OVERALL_TIMEOUT);
         }
 
         clearActivityTimeout() {
@@ -150,13 +70,13 @@
         }
 
         createStep1Payload(userMessage, conversationHistory = []) {
-            Logger.log('StreamingAPI', 'Creating Step 1 payload', { 
+            this.logger.log('StreamingAPI', 'Creating Step 1 payload', { 
                 messageLength: userMessage.length,
                 historyLength: conversationHistory.length
             });
 
-            const timestamp13 = Utils.get13DigitTimestamp();
-            const timestamp10 = Utils.get10DigitTimestamp();
+            const timestamp13 = this.utils.get13DigitTimestamp();
+            const timestamp10 = this.utils.get10DigitTimestamp();
             
             // Build messages array with proper parent/child relationships
             const messages = [];
@@ -164,7 +84,7 @@
             
             // Add conversation history first
             conversationHistory.forEach((historyMsg, index) => {
-                const historyMsgId = Utils.generateUUID();
+                const historyMsgId = this.utils.generateUUID();
                 const message = {
                     childrenIds: [],
                     content: historyMsg.content,
@@ -188,7 +108,7 @@
             });
             
             // Add current user message
-            const userMessageId = Utils.generateUUID();
+            const userMessageId = this.utils.generateUUID();
             const userMessageObj = {
                 childrenIds: [],
                 content: userMessage,
@@ -231,7 +151,7 @@
                 }
             };
 
-            Logger.log('StreamingAPI', 'Step 1 payload created', { 
+            this.logger.log('StreamingAPI', 'Step 1 payload created', { 
                 userMessageId, 
                 timestamp13,
                 totalMessages: messages.length,
@@ -242,7 +162,7 @@
         }
 
         async step1CreateConversation(userMessage, conversationHistory = []) {
-            Logger.log('StreamingAPI', 'STEP 1: Creating conversation');
+            this.logger.log('StreamingAPI', 'STEP 1: Creating conversation');
             
             if (!this.checkAuthToken()) {
                 throw new Error('No authentication token available');
@@ -253,11 +173,11 @@
             try {
                 const payload = this.createStep1Payload(userMessage, conversationHistory);
                 
-                Logger.log('StreamingAPI', 'Sending Step 1 request', { 
-                    endpoint: CONFIG.NEW_CHAT_ENDPOINT 
+                this.logger.log('StreamingAPI', 'Sending Step 1 request', { 
+                    endpoint: this.config.NEW_CHAT_ENDPOINT 
                 });
 
-                const response = await fetch(CONFIG.NEW_CHAT_ENDPOINT, {
+                const response = await fetch(this.config.NEW_CHAT_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -266,7 +186,7 @@
                     body: JSON.stringify(payload)
                 });
 
-                Logger.log('StreamingAPI', 'Step 1 response received', { 
+                this.logger.log('StreamingAPI', 'Step 1 response received', { 
                     status: response.status,
                     statusText: response.statusText
                 });
@@ -278,7 +198,7 @@
                 }
 
                 const responseData = await response.json();
-                Logger.log('StreamingAPI', 'Step 1 successful', { 
+                this.logger.log('StreamingAPI', 'Step 1 successful', { 
                     conversationId: responseData.id,
                     userId: responseData.user_id || 'not provided'
                 });
@@ -292,257 +212,76 @@
 
             } catch (error) {
                 this.clearActivityTimeout();
-                Logger.error('StreamingAPI', 'Step 1 failed', error);
+                this.logger.error('StreamingAPI', 'Step 1 failed', error);
                 throw error;
             }
         }
 
-        async step2AddAssistantSlotToExistingConversation(conversationId, userMessage, conversationHistory) {
-            Logger.log('StreamingAPI', 'STEP 2: Add assistant slot to existing conversation', { 
-                conversationId,
-                historyLength: conversationHistory.length
-            });
+        async step2AddAssistantMessage(conversationId) {
+            this.logger.log('StreamingAPI', 'STEP 2: Adding assistant message slot');
 
             try {
-                const assistantMessageId = Utils.generateUUID();
-                const timestamp13 = Utils.get13DigitTimestamp();
-                const timestamp10 = Utils.get10DigitTimestamp();
-                
-                // Build complete message chain including new user message
-                const messages = [];
-                const historyMessages = {};
-                let previousMessageId = null;
-                
-                // Add all conversation history
-                conversationHistory.forEach((historyMsg, index) => {
-                    const msgId = Utils.generateUUID();
-                    const message = {
-                        childrenIds: [],
-                        content: historyMsg.content,
-                        id: msgId,
-                        models: ["Anthropic Claude 4 Sonnet"],
-                        parentId: previousMessageId,
-                        role: historyMsg.role,
-                        timestamp: timestamp10
-                    };
-                    
-                    // Update previous message's childrenIds
-                    if (previousMessageId && historyMessages[previousMessageId]) {
-                        historyMessages[previousMessageId].childrenIds.push(msgId);
-                    }
-                    
-                    messages.push(message);
-                    historyMessages[msgId] = message;
-                    previousMessageId = msgId;
-                });
-                
-                // Add new user message
-                const userMessageId = Utils.generateUUID();
-                const userMessageObj = {
-                    childrenIds: [],
-                    content: userMessage,
-                    id: userMessageId,
-                    models: ["Anthropic Claude 4 Sonnet"],
-                    parentId: previousMessageId,
-                    role: "user",
-                    timestamp: timestamp10
-                };
-                
-                // Update previous message's childrenIds
-                if (previousMessageId && historyMessages[previousMessageId]) {
-                    historyMessages[previousMessageId].childrenIds.push(userMessageId);
-                }
-                
-                messages.push(userMessageObj);
-                historyMessages[userMessageId] = userMessageObj;
-                
-                // Add empty assistant message
-                const assistantMessage = {
-                    childrenIds: [],
-                    content: "",
-                    id: assistantMessageId,
-                    models: ["Anthropic Claude 4 Sonnet"],
-                    parentId: userMessageId,
-                    role: "assistant",
-                    timestamp: timestamp10
-                };
-                
-                // Update user message's childrenIds
-                userMessageObj.childrenIds.push(assistantMessageId);
-                historyMessages[userMessageId].childrenIds.push(assistantMessageId);
-                
-                messages.push(assistantMessage);
-                historyMessages[assistantMessageId] = assistantMessage;
+                // Step 2a: Get current conversation state
+                const getUrl = `${this.config.GET_CHAT_ENDPOINT}${conversationId}`;
+                this.logger.log('StreamingAPI', 'Step 2a: Getting conversation', { url: getUrl });
 
-                Logger.log('StreamingAPI', 'Built complete message chain for existing conversation', {
-                    totalMessages: messages.length,
-                    assistantMessageId,
-                    userMessageId
-                });
-
-                // Build conversation structure
-                const conversationData = {
-                    archived: false,
-                    chat: {
-                        files: [],
-                        history: {
-                            currentId: assistantMessageId,
-                            messages: historyMessages
-                        },
-                        id: conversationId,
-                        messages: messages,
-                        models: ["Anthropic Claude 4 Sonnet"],
-                        params: {},
-                        tags: [],
-                        timestamp: timestamp13,
-                        title: "Chat Pending"
-                    },
-                    created_at: timestamp10,
-                    folder_id: null,
-                    id: conversationId,
-                    meta: {},
-                    pinned: false,
-                    share_id: null,
-                    title: "Chat Pending",
-                    updated_at: timestamp10,
-                    user_id: null,
-                    workspace_id: null,
-                    workspace_name: null,
-                    workspace_type: null
-                };
-
-                Logger.log('StreamingAPI', 'Step 2: Posting updated conversation', {
-                    totalMessages: conversationData.chat.messages.length,
-                    assistantMessageId
-                });
-
-                // POST the updated conversation
-                const postResponse = await fetch(`${CONFIG.GET_CHAT_ENDPOINT}${conversationId}`, {
-                    method: 'POST',
+                const getResponse = await fetch(getUrl, {
+                    method: 'GET',
                     headers: {
-                        'Content-Type': 'application/json',
                         'Authorization': `Bearer ${this.token}`
-                    },
-                    body: JSON.stringify(conversationData)
+                    }
                 });
 
-                Logger.log('StreamingAPI', 'Step 2 response received', { 
-                    status: postResponse.status
-                });
-
-                if (!postResponse.ok) {
-                    throw new Error(`Step 2 failed: ${postResponse.status} ${postResponse.statusText}`);
+                if (!getResponse.ok) {
+                    throw new Error(`Step 2a failed: ${getResponse.status} ${getResponse.statusText}`);
                 }
 
-                const postResponseData = await postResponse.json();
-                Logger.log('StreamingAPI', 'Step 2 complete - assistant message slot added to existing conversation', { 
-                    assistantMessageId
+                const conversationData = await getResponse.json();
+                this.logger.log('StreamingAPI', 'Step 2a successful', { 
+                    messagesCount: conversationData.chat.messages.length 
                 });
 
-                return {
-                    assistantMessageId: assistantMessageId,
-                    conversationData: conversationData
-                };
+                // Step 2b: Add empty assistant message
+                const assistantMessageId = this.utils.generateUUID();
+                const timestamp10 = this.utils.get10DigitTimestamp();
 
-            } catch (error) {
-                Logger.error('StreamingAPI', 'Step 2 (existing conversation) failed', error);
-                throw error;
-            }
-        }
+                // Find the last user message to set as parent
+                const userMessages = conversationData.chat.messages.filter(m => m.role === 'user');
+                const lastUserMessage = userMessages[userMessages.length - 1];
 
-        async step2AddAssistantSlot(conversationId, step1Payload) {
-            Logger.log('StreamingAPI', 'STEP 2: Add assistant message slot (skipping GET)', { 
-                conversationId 
-            });
-
-            try {
-                const assistantMessageId = Utils.generateUUID();
-                const timestamp10 = Utils.get10DigitTimestamp();
-                
-                // Find the last message from Step 1 payload for parentId
-                const messages = step1Payload.chat.messages || [];
-                const lastMessage = messages[messages.length - 1];
-                const parentId = lastMessage ? lastMessage.id : null;
-                
-                Logger.log('StreamingAPI', 'Creating assistant message from Step 1 data', {
-                    assistantMessageId,
-                    parentId,
-                    timestamp10,
-                    step1MessageCount: messages.length
-                });
-
-                // Create the empty assistant message
                 const assistantMessage = {
                     childrenIds: [],
                     content: "",
                     id: assistantMessageId,
                     models: ["Anthropic Claude 4 Sonnet"],
-                    parentId: parentId,
+                    parentId: lastUserMessage ? lastUserMessage.id : null,
                     role: "assistant",
                     timestamp: timestamp10
                 };
 
-                // Build conversation structure based on Step 1 payload
-                const conversationData = {
-                    archived: false,
-                    chat: {
-                        files: [],
-                        history: {
-                            currentId: assistantMessageId,
-                            messages: JSON.parse(JSON.stringify(step1Payload.chat.history.messages))
-                        },
-                        id: conversationId,
-                        messages: [...step1Payload.chat.messages],
-                        models: ["Anthropic Claude 4 Sonnet"],
-                        params: {},
-                        tags: [],
-                        timestamp: step1Payload.chat.timestamp,
-                        title: "Chat Pending"
-                    },
-                    created_at: timestamp10,
-                    folder_id: null,
-                    id: conversationId,
-                    meta: {},
-                    pinned: false,
-                    share_id: null,
-                    title: "Chat Pending",
-                    updated_at: timestamp10,
-                    user_id: null, // Will be filled by server
-                    workspace_id: null,
-                    workspace_name: null,
-                    workspace_type: null
-                };
-                
-                // Add assistant message to messages array
-                conversationData.chat.messages.push(assistantMessage);
-                
-                // Add to history.messages
-                conversationData.chat.history.messages[assistantMessageId] = assistantMessage;
-                
-                // Update parent message's childrenIds if it exists
-                if (parentId && conversationData.chat.history.messages[parentId]) {
-                    if (!conversationData.chat.history.messages[parentId].childrenIds) {
-                        conversationData.chat.history.messages[parentId].childrenIds = [];
-                    }
-                    conversationData.chat.history.messages[parentId].childrenIds.push(assistantMessageId);
-                    
-                    // Also update in messages array
-                    const parentInMessages = conversationData.chat.messages.find(msg => msg.id === parentId);
+                // Update parent's childrenIds
+                if (lastUserMessage) {
+                    const parentInMessages = conversationData.chat.messages.find(m => m.id === lastUserMessage.id);
                     if (parentInMessages) {
-                        if (!parentInMessages.childrenIds) {
-                            parentInMessages.childrenIds = [];
-                        }
                         parentInMessages.childrenIds.push(assistantMessageId);
                     }
+
+                    const parentInHistory = conversationData.chat.history.messages[lastUserMessage.id];
+                    if (parentInHistory) {
+                        parentInHistory.childrenIds.push(assistantMessageId);
+                    }
                 }
 
-                Logger.log('StreamingAPI', 'Step 2: Posting conversation with assistant slot', {
-                    totalMessages: conversationData.chat.messages.length,
-                    assistantMessageId
-                });
+                // Add to messages array
+                conversationData.chat.messages.push(assistantMessage);
 
-                // POST the conversation with assistant message slot
-                const postResponse = await fetch(`${CONFIG.GET_CHAT_ENDPOINT}${conversationId}`, {
+                // Add to history
+                conversationData.chat.history.messages[assistantMessageId] = assistantMessage;
+                conversationData.chat.history.currentId = assistantMessageId;
+
+                this.logger.log('StreamingAPI', 'Step 2b: Posting updated conversation');
+
+                const postResponse = await fetch(`${this.config.GET_CHAT_ENDPOINT}${conversationId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -551,81 +290,58 @@
                     body: JSON.stringify(conversationData)
                 });
 
-                Logger.log('StreamingAPI', 'Step 2 response received', { 
-                    status: postResponse.status
-                });
-
                 if (!postResponse.ok) {
-                    throw new Error(`Step 2 failed: ${postResponse.status} ${postResponse.statusText}`);
+                    throw new Error(`Step 2b failed: ${postResponse.status} ${postResponse.statusText}`);
                 }
 
-                const postResponseData = await postResponse.json();
-                Logger.log('StreamingAPI', 'Step 2 complete - assistant message slot created', { 
-                    assistantMessageId
+                this.logger.log('StreamingAPI', 'Step 2 successful', { 
+                    assistantMessageId 
                 });
 
-                return {
-                    assistantMessageId: assistantMessageId,
-                    conversationData: conversationData
-                };
+                return { assistantMessageId };
 
             } catch (error) {
-                Logger.error('StreamingAPI', 'Step 2 failed', error);
+                this.logger.error('StreamingAPI', 'Step 2 failed', error);
                 throw error;
             }
         }
 
-        createStep3Payload(conversationId, assistantMessageId, messages) {
-            Logger.log('StreamingAPI', 'Creating Step 3 payload', { 
-                conversationId,
-                assistantMessageId,
-                messageCount: messages.length 
-            });
-
-            // Convert messages to simplified format (content + role only)
-            const simplifiedMessages = messages.map(msg => ({
-                content: msg.content,
-                role: msg.role
-            }));
-
-            const payload = {
-                background_tasks: {
-                    title_generation: true,
-                    tags_generation: true
-                },
-                chat_id: conversationId,
-                features: {
-                    web_search: true
-                },
-                id: assistantMessageId,
-                messages: simplifiedMessages,
-                model: "Anthropic Claude 4 Sonnet",
-                params: {},
-                session_id: CONFIG.SESSION_ID,
-                stream: true
-            };
-
-            Logger.log('StreamingAPI', 'Step 3 payload created', { 
-                simplifiedMessageCount: simplifiedMessages.length 
-            });
-
-            return payload;
-        }
-
-        async step3StreamResponse(conversationId, assistantMessageId, messages, onChunk, onComplete, onError) {
-            Logger.log('StreamingAPI', 'STEP 3: Starting response stream', { 
-                conversationId,
-                assistantMessageId 
-            });
+        async step3StreamCompletions(conversationId, assistantMessageId, messages, onChunk, onComplete, onError, onProgress) {
+            this.logger.log('StreamingAPI', 'STEP 3: Starting streaming completions');
 
             try {
-                const payload = this.createStep3Payload(conversationId, assistantMessageId, messages);
+                // Progress: Step 3 starting
+                if (onProgress) onProgress(1, 3, 'Starting streaming...');
 
-                Logger.log('StreamingAPI', 'Sending Step 3 request', { 
-                    endpoint: CONFIG.COMPLETIONS_ENDPOINT 
+                const payload = {
+                    background_tasks: {
+                        title_generation: true,
+                        tags_generation: true
+                    },
+                    chat_id: conversationId,
+                    features: {
+                        web_search: false
+                    },
+                    id: assistantMessageId,
+                    messages: messages.map(msg => ({
+                        content: msg.content,
+                        role: msg.role
+                    })),
+                    model: "Anthropic Claude 4 Sonnet",
+                    params: {},
+                    session_id: this.config.SESSION_ID,
+                    stream: true
+                };
+
+                this.logger.log('StreamingAPI', 'Sending Step 3 request', { 
+                    endpoint: this.config.COMPLETIONS_ENDPOINT,
+                    messagesCount: payload.messages.length
                 });
 
-                const response = await fetch(CONFIG.COMPLETIONS_ENDPOINT, {
+                // Progress: Request sent
+                if (onProgress) onProgress(2, 3, 'Request sent, waiting for response...');
+
+                const response = await fetch(this.config.COMPLETIONS_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -634,1336 +350,156 @@
                     body: JSON.stringify(payload)
                 });
 
-                Logger.log('StreamingAPI', 'Step 3 response received', { 
-                    status: response.status,
-                    statusText: response.statusText
-                });
-
                 if (!response.ok) {
                     throw new Error(`Step 3 failed: ${response.status} ${response.statusText}`);
                 }
 
-                if (!response.body) {
-                    throw new Error('Step 3 - no response body for streaming');
-                }
+                // Progress: Response received, start streaming
+                if (onProgress) onProgress(null, null, 'Streaming response...');
 
-                Logger.log('StreamingAPI', 'Step 3 - starting to read SSE stream');
+                this.logger.log('StreamingAPI', 'Step 3 streaming started');
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let buffer = '';
-                let chunkCount = 0;
 
-                try {
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        
-                        if (done) {
-                            Logger.log('StreamingAPI', 'Step 3 - stream ended', { totalChunks: chunkCount });
-                            break;
-                        }
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        this.logger.log('StreamingAPI', 'Step 3 streaming completed');
+                        if (onComplete) await onComplete();
+                        break;
+                    }
 
-                        // Reset activity timeout on each chunk
-                        this.resetActivityTimeout();
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
 
-                        const chunk = decoder.decode(value, { stream: true });
-                        buffer += chunk;
-
-                        // Process complete lines
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-                        for (const line of lines) {
-                            const trimmedLine = line.trim();
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.substring(6);
                             
-                            if (trimmedLine.startsWith('data: ')) {
-                                const jsonStr = trimmedLine.slice(6); // Remove 'data: '
+                            if (data === '[DONE]') {
+                                continue;
+                            }
+
+                            try {
+                                const parsed = JSON.parse(data);
                                 
-                                if (jsonStr === '[DONE]') {
-                                    Logger.log('StreamingAPI', 'Step 3 - received [DONE] marker');
-                                    onComplete();
-                                    return;
-                                }
-
-                                try {
-                                    const data = JSON.parse(jsonStr);
-                                    chunkCount++;
+                                if (parsed.choices && parsed.choices[0]) {
+                                    const choice = parsed.choices[0];
                                     
-                                    Logger.log('StreamingAPI', `Step 3 - chunk ${chunkCount}`, { 
-                                        hasChoices: !!data.choices,
-                                        choiceCount: data.choices?.length || 0
-                                    });
-
-                                    if (data.choices && data.choices.length > 0) {
-                                        const choice = data.choices[0];
-                                        
-                                        if (choice.finish_reason === 'stop') {
-                                            Logger.log('StreamingAPI', 'Step 3 - received finish_reason: stop');
-                                            onComplete();
-                                            return;
-                                        }
-                                        
-                                        if (choice.delta && choice.delta.content) {
-                                            Logger.log('StreamingAPI', `Step 3 - content chunk: "${choice.delta.content.substring(0, 50)}..."`);
+                                    if (choice.finish_reason === 'stop') {
+                                        continue;
+                                    }
+                                    
+                                    if (choice.delta && choice.delta.content) {
+                                        if (onChunk) {
                                             onChunk(choice.delta.content);
                                         }
                                     }
-                                    
-                                } catch (parseError) {
-                                    Logger.warn('StreamingAPI', 'Step 3 - failed to parse chunk', { 
-                                        jsonStr: jsonStr.substring(0, 100),
-                                        error: parseError.message 
-                                    });
                                 }
+                            } catch (e) {
+                                this.logger.warn('StreamingAPI', 'Failed to parse streaming data', { 
+                                    data: data.substring(0, 100) 
+                                });
                             }
                         }
                     }
-
-                } finally {
-                    reader.releaseLock();
-                    this.clearActivityTimeout();
                 }
 
             } catch (error) {
+                this.logger.error('StreamingAPI', 'Step 3 failed', error);
+                if (onError) onError(error);
+                throw error;
+            } finally {
                 this.clearActivityTimeout();
-                Logger.error('StreamingAPI', 'Step 3 failed', error);
-                onError(error);
             }
         }
 
-        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk, onComplete, onError, onProgress = null) {
-            const isNewConversation = !existingConversationId;
-            
-            Logger.log('StreamingAPI', 'Starting message flow', { 
-                userMessage: userMessage.substring(0, 50) + '...',
-                isNewConversation,
-                existingConversationId,
+        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk = null, onComplete = null, onError = null, onProgress = null) {
+            this.logger.log('StreamingAPI', 'Starting 3-step flow', { 
+                hasExistingConversation: !!existingConversationId,
                 historyLength: conversationHistory.length
             });
 
             try {
-                let conversationId;
-                let step2Result;
-                
-                if (isNewConversation) {
-                    Logger.log('StreamingAPI', 'NEW CONVERSATION: Running Step 1 + Step 2');
-                    
-                    // Step 1: Create conversation
-                    if (onProgress) onProgress(1, 4, 'Creating conversation...');
+                let conversationId = existingConversationId;
+                let messages = [...conversationHistory, { role: 'user', content: userMessage }];
+
+                // Step 1: Create conversation (only if new)
+                if (!conversationId) {
                     const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
                     conversationId = step1Result.conversationId;
-                    
-                    // Step 2: Add assistant message slot (no GET needed)
-                    if (onProgress) onProgress(2, 4, 'Adding assistant message slot...');
-                    step2Result = await this.step2AddAssistantSlot(
-                        step1Result.conversationId,
-                        step1Result.payload
-                    );
-                } else {
-                    Logger.log('StreamingAPI', 'EXISTING CONVERSATION: Running Step 2 only');
-                    conversationId = existingConversationId;
-                    
-                    // Step 2: Add assistant slot to existing conversation with full history
-                    if (onProgress) onProgress(1, 2, 'Adding message to conversation...');
-                    step2Result = await this.step2AddAssistantSlotToExistingConversation(
-                        existingConversationId,
-                        userMessage,
-                        conversationHistory
-                    );
                 }
-                
-                // Step 3: Stream response (same for both flows)
-                const allMessages = [
-                    ...conversationHistory,
-                    { role: 'user', content: userMessage }
-                ];
-                
-                if (isNewConversation) {
-                    if (onProgress) onProgress(3, 4, 'Starting response stream...');
-                } else {
-                    if (onProgress) onProgress(2, 2, 'Starting response stream...');
-                }
-                
-                await this.step3StreamResponse(
+
+                // Step 2: Add assistant message slot
+                const step2Result = await this.step2AddAssistantMessage(conversationId);
+
+                // Step 3: Stream completions
+                await this.step3StreamCompletions(
                     conversationId,
                     step2Result.assistantMessageId,
-                    allMessages,
-                    (chunk) => {
-                        // Clear progress on first chunk
-                        if (onProgress) onProgress(null);
-                        onChunk(chunk);
-                    },
+                    messages,
+                    onChunk,
                     onComplete,
-                    onError
+                    onError,
+                    onProgress
                 );
 
-                // Return conversation ID for new conversations
                 return { conversationId };
 
             } catch (error) {
-                Logger.error('StreamingAPI', 'Complete message flow failed', error);
-                onError(error);
+                this.logger.error('StreamingAPI', '3-step flow failed', error);
+                if (onError) onError(error);
+                throw error;
             }
         }
     }
 
-    // File System Emulation
-    class FileSystemManager {
-        constructor() {
-            Logger.log('FileSystem', 'Initializing File System Manager');
-        }
+    window.StreamingChatAPIManager = StreamingAPIManager;
 
-        static getFileKey(projectId, path) {
-            return `file-system.${projectId}.${path}`;
-        }
+})();
 
-        readFile(projectId, path) {
-            const key = FileSystemManager.getFileKey(projectId, path);
-            const content = localStorage.getItem(key);
-            Logger.log('FileSystem', 'Read file', { projectId, path, found: !!content });
-            return content;
-        }
+// ===== chat-app.js =====
+(function() {
+    'use strict';
 
-        writeFile(projectId, path, content) {
-            const key = FileSystemManager.getFileKey(projectId, path);
-            localStorage.setItem(key, content);
-            Logger.log('FileSystem', 'Write file', { projectId, path, size: content.length });
-        }
-
-        searchFiles(projectId, query, pathPattern = '*') {
-            const prefix = `file-system.${projectId}.`;
-            const results = [];
-            
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith(prefix)) {
-                    const path = key.substring(prefix.length);
-                    const content = localStorage.getItem(key);
-                    
-                    // Simple pattern matching (could be enhanced)
-                    if (pathPattern === '*' || path.includes(pathPattern.replace('*', ''))) {
-                        if (content && content.toLowerCase().includes(query.toLowerCase())) {
-                            const lines = content.split('\n');
-                            const matchingLines = lines
-                                .map((line, index) => ({ line: line.trim(), number: index + 1 }))
-                                .filter(({ line }) => line.toLowerCase().includes(query.toLowerCase()))
-                                .slice(0, 3); // Limit to 3 matches per file
-                            
-                            results.push({
-                                path,
-                                matches: matchingLines
-                            });
-                        }
-                    }
-                }
-            }
-            
-            Logger.log('FileSystem', 'Search files', { projectId, query, found: results.length });
-            return results;
-        }
-
-        listFiles(projectId, pathPrefix = '') {
-            const prefix = `file-system.${projectId}.${pathPrefix}`;
-            const files = [];
-            
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith(prefix)) {
-                    const path = key.substring(`file-system.${projectId}.`.length);
-                    files.push(path);
-                }
-            }
-            
-            return files.sort();
-        }
-    }
-
-    // Project Management
-    class ProjectManager {
-        constructor() {
-            Logger.log('ProjectManager', 'Initializing Project Manager');
-            this.projects = this.loadProjects();
-        }
-
-        loadProjects() {
-            try {
-                const stored = localStorage.getItem(CONFIG.PROJECTS_KEY);
-                return stored ? JSON.parse(stored) : [];
-            } catch (e) {
-                Logger.error('ProjectManager', 'Failed to load projects', e);
-                return [];
-            }
-        }
-
-        saveProjects() {
-            try {
-                localStorage.setItem(CONFIG.PROJECTS_KEY, JSON.stringify(this.projects));
-            } catch (e) {
-                Logger.error('ProjectManager', 'Failed to save projects', e);
-            }
-        }
-
-        createProject(name) {
-            const id = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-            const project = {
-                id,
-                name,
-                created: new Date().toISOString()
-            };
-            
-            this.projects.push(project);
-            this.saveProjects();
-            Logger.log('ProjectManager', 'Project created', { id, name });
-            return project;
-        }
-
-        getProject(id) {
-            return this.projects.find(p => p.id === id);
-        }
-
-        listProjects() {
-            return [...this.projects];
-        }
-    }
-
-    // Tool Use Parser and Executor
-    class ToolManager {
-        constructor(fileSystem, projectManager) {
-            this.fileSystem = fileSystem;
-            this.projectManager = projectManager;
-            this.activeProjects = [];
-            Logger.log('ToolManager', 'Initializing Tool Manager');
-        }
-
-        setActiveProjects(projectIds) {
-            this.activeProjects = projectIds;
-            Logger.log('ToolManager', 'Active projects set', { projectIds });
-        }
-
-        parseToolUses(text) {
-            const toolUses = [];
-            const regex = /<tool_use>(.*?)<\/tool_use>/gs;
-            let match;
-            
-            while ((match = regex.exec(text)) !== null) {
-                try {
-                    const toolData = JSON.parse(match[1]);
-                    toolUses.push({
-                        fullMatch: match[0],
-                        startIndex: match.index,
-                        endIndex: match.index + match[0].length,
-                        data: toolData
-                    });
-                } catch (e) {
-                    Logger.warn('ToolManager', 'Failed to parse tool use', { text: match[1] });
-                }
-            }
-            
-            return toolUses;
-        }
-
-        async executeTool(toolData) {
-            Logger.log('ToolManager', 'Executing tool', { type: toolData.tool_type });
-            
-            switch (toolData.tool_type) {
-                case 'read_file':
-                    return this.executeReadFile(toolData);
-                case 'search_files':
-                    return this.executeSearchFiles(toolData);
-                default:
-                    throw new Error(`Unknown tool type: ${toolData.tool_type}`);
-            }
-        }
-
-        executeReadFile(toolData) {
-            const { path } = toolData;
-            const results = [];
-            
-            for (const projectId of this.activeProjects) {
-                const content = this.fileSystem.readFile(projectId, path);
-                if (content !== null) {
-                    results.push({
-                        projectId,
-                        path,
-                        found: true,
-                        content,
-                        size: content.length
-                    });
-                } else {
-                    results.push({
-                        projectId,
-                        path,
-                        found: false,
-                        error: 'File not found'
-                    });
-                }
-            }
-            
-            return {
-                tool_type: 'read_file',
-                path,
-                results
-            };
-        }
-
-        executeSearchFiles(toolData) {
-            const { query, path_pattern } = toolData;
-            const results = [];
-            
-            for (const projectId of this.activeProjects) {
-                const searchResults = this.fileSystem.searchFiles(projectId, query, path_pattern);
-                results.push({
-                    projectId,
-                    query,
-                    matches: searchResults
-                });
-            }
-            
-            return {
-                tool_type: 'search_files',
-                query,
-                path_pattern,
-                results
-            };
-        }
-    }
-
-    // Streaming Response Parser with Tool Use Detection
-    class StreamingParser {
-        constructor(toolManager) {
-            this.toolManager = toolManager;
-            this.reset();
-        }
-
-        reset() {
-            this.buffer = '';
-            this.output = '';
-            this.toolUses = [];
-            this.inProgress = false;
-        }
-
-        processChunk(chunk) {
-            this.buffer += chunk;
-            const result = {
-                displayText: '',
-                toolUses: [],
-                isComplete: false
-            };
-
-            let searchStart = 0;
-            
-            while (true) {
-                // Look for start of potential tool use
-                const toolStart = this.buffer.indexOf('<tool_use>', searchStart);
-                
-                if (toolStart === -1) {
-                    // No tool use found, output remaining buffer
-                    if (searchStart < this.buffer.length) {
-                        const remaining = this.buffer.substring(searchStart);
-                        this.output += remaining;
-                        result.displayText += remaining;
-                        this.buffer = '';
-                    }
-                    break;
-                }
-                
-                // Output text before tool use
-                if (toolStart > searchStart) {
-                    const beforeTool = this.buffer.substring(searchStart, toolStart);
-                    this.output += beforeTool;
-                    result.displayText += beforeTool;
-                }
-                
-                // Look for end of tool use
-                const toolEnd = this.buffer.indexOf('</tool_use>', toolStart);
-                
-                if (toolEnd === -1) {
-                    // Tool use not complete yet, keep in buffer
-                    this.buffer = this.buffer.substring(toolStart);
-                    break;
-                }
-                
-                // Extract complete tool use
-                const toolUseText = this.buffer.substring(toolStart, toolEnd + 11);
-                const toolContent = this.buffer.substring(toolStart + 10, toolEnd);
-                
-                try {
-                    const toolData = JSON.parse(toolContent);
-                    const toolUse = {
-                        data: toolData,
-                        text: toolUseText
-                    };
-                    
-                    this.toolUses.push(toolUse);
-                    result.toolUses.push(toolUse);
-                    
-                    Logger.log('StreamingParser', 'Tool use detected', { type: toolData.tool_type });
-                } catch (e) {
-                    // Not valid JSON, treat as regular text
-                    this.output += toolUseText;
-                    result.displayText += toolUseText;
-                }
-                
-                searchStart = toolEnd + 11;
-            }
-
-            return result;
-        }
-
-        getCompleteOutput() {
-            return this.output;
-        }
-
-        getToolUses() {
-            return [...this.toolUses];
-        }
-    }
-
-    // Chat Management
-    class ChatManager {
-        constructor() {
-            Logger.log('ChatManager', 'Initializing ChatManager');
-            this.data = this.loadData();
-        }
-
-        loadData() {
-            try {
-                const stored = localStorage.getItem(CONFIG.STORAGE_KEY);
-                return stored ? JSON.parse(stored) : { chats: [], currentChatId: null };
-            } catch (e) {
-                Logger.error('ChatManager', 'Failed to load chat data', e);
-                return { chats: [], currentChatId: null };
-            }
-        }
-
-        saveData() {
-            try {
-                localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(this.data));
-            } catch (e) {
-                Logger.error('ChatManager', 'Failed to save chat data', e);
-            }
-        }
-
-        createNewChat() {
-            const chatId = Date.now().toString();
-            const chat = {
-                id: chatId,
-                timestamp: new Date().toLocaleString(),
-                messages: [],
-                conversationId: null, // Will be set when first message is sent
-                activeProjects: [] // Projects accessible to this chat
-            };
-            this.data.chats.unshift(chat);
-            this.data.currentChatId = chatId;
-            this.saveData();
-            Logger.log('ChatManager', 'New chat created', { chatId });
-            return chat;
-        }
-
-        getCurrentChat() {
-            if (!this.data.currentChatId) return null;
-            return this.data.chats.find(chat => chat.id === this.data.currentChatId);
-        }
-
-        selectChat(chatId) {
-            this.data.currentChatId = chatId;
-            this.saveData();
-        }
-
-        addMessage(role, content) {
-            const chat = this.getCurrentChat();
-            if (chat) {
-                chat.messages.push({ role, content, timestamp: Date.now() });
-                this.saveData();
-                Logger.log('ChatManager', 'Message added', { role });
-            }
-        }
-
-        getConversationHistory() {
-            const currentChat = this.getCurrentChat();
-            if (!currentChat) return [];
-            
-            return currentChat.messages.map(msg => ({
-                role: msg.role,
-                content: msg.content
-            }));
-        }
-
-        setConversationId(conversationId) {
-            const chat = this.getCurrentChat();
-            if (chat) {
-                chat.conversationId = conversationId;
-                this.saveData();
-                Logger.log('ChatManager', 'Conversation ID set', { 
-                    chatId: chat.id, 
-                    conversationId 
-                });
-            }
-        }
-
-        getConversationId() {
-            const chat = this.getCurrentChat();
-            return chat ? chat.conversationId : null;
-        }
-
-        setActiveProjects(projectIds) {
-            const chat = this.getCurrentChat();
-            if (chat) {
-                chat.activeProjects = projectIds;
-                this.saveData();
-                Logger.log('ChatManager', 'Active projects set', { 
-                    chatId: chat.id, 
-                    projectIds 
-                });
-            }
-        }
-
-        getActiveProjects() {
-            const chat = this.getCurrentChat();
-            return chat ? chat.activeProjects : [];
-        }
-    }
-
-    // Complete page replacement
-    function replacePageWithStreamingUI() {
-        Logger.log('UI', 'Completely replacing page content');
-        
-        // Clear entire page
-        document.head.innerHTML = '';
-        document.body.innerHTML = '';
-        
-        // Add basic meta tags
-        const meta = document.createElement('meta');
-        meta.setAttribute('charset', 'UTF-8');
-        document.head.appendChild(meta);
-        
-        const viewport = document.createElement('meta');
-        viewport.setAttribute('name', 'viewport');
-        viewport.setAttribute('content', 'width=device-width, initial-scale=1.0');
-        document.head.appendChild(viewport);
-        
-        const title = document.createElement('title');
-        title.textContent = 'AI Chat Interface';
-        document.head.appendChild(title);
-
-        const container = document.createElement('div');
-        container.id = 'ai-chat-interface';
-        container.innerHTML = `
-            <div class="ide-container">
-                <div class="left-panel">
-                    <div class="project-selector">
-                        <select id="project-dropdown">
-                            <option value="">Select Project...</option>
-                            <option value="__new__">+ Create New Project</option>
-                        </select>
-                    </div>
-                    
-                    <div class="file-explorer" id="file-explorer">
-                        <div class="no-project">Select a project to view files</div>
-                    </div>
-                </div>
-                
-                <div class="right-panel">
-                    <div class="editor-tabs" id="editor-tabs">
-                        <div class="editor-tab chat-tab active" data-tab="chat">
-                            💬 Chat
-                        </div>
-                    </div>
-                    
-                    <div class="editor-content" id="editor-content">
-                        <!-- Chat Tab Content -->
-                        <div class="tab-pane active" data-tab="chat">
-                            <div class="chat-container">
-                                <div id="messages-streaming" class="messages"></div>
-                                <div class="input-area">
-                                    <textarea id="user-input-streaming" placeholder="Ask about your project..." rows="3"></textarea>
-                                    <button id="send-btn-streaming" class="btn btn-primary">Send</button>
-                                </div>
-                                <div id="status-streaming" class="status">Select a project to start chatting</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // Add CSS styling
-        const style = document.createElement('style');
-        style.textContent = `
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            
-            html, body {
-                height: 100%;
-                overflow: hidden;
-            }
-            
-            #ai-chat-interface {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                background: #1a1a1a;
-                color: #e0e0e0;
-                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-                font-size: 14px;
-                z-index: 9999;
-                display: flex;
-                flex-direction: column;
-            }
-
-            .ide-container {
-                display: flex;
-                height: 100%;
-            }
-
-            .left-panel {
-                width: 300px;
-                background: #252525;
-                border-right: 1px solid #444;
-                display: flex;
-                flex-direction: column;
-            }
-
-            .project-selector {
-                padding: 15px;
-                border-bottom: 1px solid #333;
-            }
-
-            .project-selector select {
-                width: 100%;
-                background: #333;
-                border: 1px solid #555;
-                color: #e0e0e0;
-                padding: 8px 12px;
-                border-radius: 4px;
-                font-family: inherit;
-                font-size: 14px;
-            }
-
-            .project-selector select:focus {
-                outline: none;
-                border-color: #0d7377;
-            }
-
-            .file-explorer {
-                flex: 1;
-                padding: 15px;
-                overflow-y: auto;
-            }
-
-            .no-project {
-                color: #666;
-                font-size: 12px;
-                text-align: center;
-                margin-top: 50px;
-            }
-
-            .file-tree {
-                display: flex;
-                flex-direction: column;
-                gap: 2px;
-            }
-
-            .folder-item, .file-item {
-                padding: 6px 8px;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 12px;
-                font-family: monospace;
-                transition: background-color 0.2s;
-                display: flex;
-                align-items: center;
-                gap: 6px;
-            }
-
-            .folder-item {
-                font-weight: bold;
-                color: #ccc;
-            }
-
-            .folder-item:hover, .file-item:hover {
-                background: #333;
-            }
-
-            .folder-item.expanded {
-                color: #e0e0e0;
-            }
-
-            .file-item {
-                color: #aaa;
-                margin-left: 20px;
-            }
-
-            .file-item.active {
-                background: #0d7377;
-                color: #e0e0e0;
-            }
-
-            .folder-icon {
-                font-size: 10px;
-                transition: transform 0.2s;
-            }
-
-            .folder-item.expanded .folder-icon {
-                transform: rotate(90deg);
-            }
-
-            .right-panel {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-            }
-
-            .editor-tabs {
-                background: #2d2d2d;
-                border-bottom: 1px solid #444;
-                display: flex;
-                overflow-x: auto;
-                min-height: 40px;
-            }
-
-            .editor-tab {
-                background: #333;
-                border: none;
-                border-right: 1px solid #444;
-                color: #ccc;
-                padding: 8px 16px;
-                cursor: pointer;
-                font-family: inherit;
-                font-size: 13px;
-                white-space: nowrap;
-                position: relative;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                transition: all 0.2s;
-            }
-
-            .editor-tab:hover {
-                background: #3a3a3a;
-                color: #e0e0e0;
-            }
-
-            .editor-tab.active {
-                background: #1a1a1a;
-                color: #e0e0e0;
-            }
-
-            .editor-tab.chat-tab {
-                background: #2a4d50;
-                color: #e0e0e0;
-            }
-
-            .editor-tab.chat-tab.active {
-                background: #0d7377;
-            }
-
-            .editor-tab .close-btn {
-                background: none;
-                border: none;
-                color: #999;
-                font-size: 12px;
-                cursor: pointer;
-                padding: 2px 4px;
-                border-radius: 2px;
-                margin-left: 8px;
-            }
-
-            .editor-tab .close-btn:hover {
-                background: #555;
-                color: #fff;
-            }
-
-            .editor-tab.chat-tab .close-btn {
-                display: none;
-            }
-
-            .editor-content {
-                flex: 1;
-                overflow: hidden;
-                position: relative;
-            }
-
-            .tab-pane {
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                display: none;
-                flex-direction: column;
-            }
-
-            .tab-pane.active {
-                display: flex;
-            }
-
-            .chat-container {
-                display: flex;
-                flex-direction: column;
-                height: 100%;
-            }
-
-            .file-editor-pane {
-                display: flex;
-                flex-direction: column;
-                height: 100%;
-            }
-
-            .file-editor-content {
-                flex: 1;
-                overflow: hidden;
-                position: relative;
-            }
-
-            .editor-textarea {
-                width: 100%;
-                height: 100%;
-                background: #1a1a1a;
-                border: none;
-                color: #e0e0e0;
-                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-                font-size: 13px;
-                line-height: 1.4;
-                resize: none;
-                outline: none;
-                padding: 15px;
-                margin: 0;
-            }
-
-            .file-actions {
-                background: #2d2d2d;
-                border-bottom: 1px solid #444;
-                padding: 8px 15px;
-                display: flex;
-                gap: 10px;
-                align-items: center;
-            }
-
-            .file-actions .btn {
-                padding: 4px 8px;
-                font-size: 11px;
-            }
-
-            .new-file-btn {
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                background: #0d7377;
-                border: none;
-                color: white;
-                width: 24px;
-                height: 24px;
-                border-radius: 50%;
-                cursor: pointer;
-                font-size: 14px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            .new-file-btn:hover {
-                background: #0a5d61;
-            }
-
-            .messages {
-                flex: 1;
-                overflow-y: auto;
-                padding: 20px;
-                display: flex;
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            .message {
-                max-width: 80%;
-                padding: 12px 16px;
-                border-radius: 8px;
-                white-space: pre-wrap;
-                word-wrap: break-word;
-            }
-
-            .message.user {
-                align-self: flex-end;
-                background: #0d7377;
-                border: 1px solid #14a085;
-            }
-
-            .message.assistant {
-                align-self: flex-start;
-                background: #2d2d2d;
-                border: 1px solid #444;
-            }
-
-            .message.streaming {
-                border-left: 3px solid #ffa726;
-            }
-
-            .message.progress {
-                border-left: 3px solid #2196f3;
-                padding: 8px 16px;
-                min-height: 20px;
-                display: flex;
-                align-items: center;
-            }
-
-            .progress-bar-container {
-                width: 100%;
-                height: 8px;
-                background: #444;
-                border-radius: 4px;
-                overflow: hidden;
-            }
-
-            .progress-bar-fill {
-                height: 100%;
-                background: linear-gradient(90deg, #2196f3, #64b5f6);
-                border-radius: 4px;
-                transition: width 0.3s ease;
-            }
-
-            .message.tool-result {
-                border-left: 3px solid #9c27b0;
-                background: #2a2a2a;
-                cursor: pointer;
-                transition: background-color 0.2s;
-            }
-
-            .message.tool-result:hover {
-                background: #333;
-            }
-
-            .tool-use-indicator {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                background: #3a3a3a;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 4px 8px;
-                margin: 2px 4px;
-                cursor: pointer;
-                transition: background-color 0.2s;
-            }
-
-            .tool-use-indicator:hover {
-                background: #444;
-            }
-
-            .tool-icon {
-                font-size: 14px;
-            }
-
-            .tool-main {
-                font-size: 12px;
-                color: #ccc;
-                font-family: monospace;
-            }
-
-            .tool-header {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                margin-bottom: 8px;
-                font-weight: bold;
-            }
-
-            .tool-title {
-                color: #e0e0e0;
-            }
-
-            .tool-preview {
-                font-size: 12px;
-                color: #aaa;
-                white-space: pre-line;
-            }
-
-            .projects-list, .project-list {
-                display: flex;
-                flex-direction: column;
-                gap: 5px;
-            }
-
-            .project-item {
-                padding: 8px 12px;
-                background: #333;
-                border: 1px solid #444;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-                transition: background-color 0.2s;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            .project-item:hover {
-                background: #3a3a3a;
-            }
-
-            .project-item.active {
-                background: #0d7377;
-                border-color: #14a085;
-            }
-
-            .project-item.selected {
-                background: #2a4d50;
-                border-color: #0d7377;
-            }
-
-            .project-name {
-                flex: 1;
-            }
-
-            .project-toggle {
-                background: none;
-                border: none;
-                color: #ccc;
-                font-size: 10px;
-                cursor: pointer;
-                padding: 2px 6px;
-                border-radius: 2px;
-            }
-
-            .project-toggle:hover {
-                background: #555;
-            }
-
-            .project-toggle.active {
-                color: #4caf50;
-            }
-
-            .file-tree {
-                display: flex;
-                flex-direction: column;
-                gap: 2px;
-            }
-
-            .file-item {
-                padding: 6px 8px;
-                background: #2a2a2a;
-                border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 11px;
-                font-family: monospace;
-                transition: background-color 0.2s;
-            }
-
-            .file-item:hover {
-                background: #333;
-            }
-
-            .file-item.active {
-                background: #0d7377;
-                border-color: #14a085;
-            }
-
-            .main-projects {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-            }
-
-            .file-editor {
-                flex: 1;
-                background: #1a1a1a;
-                position: relative;
-                display: flex;
-                flex-direction: column;
-            }
-
-            .editor-placeholder {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                flex: 1;
-                color: #666;
-                font-size: 14px;
-            }
-
-            .editor-header {
-                background: #2d2d2d;
-                padding: 10px 15px;
-                border-bottom: 1px solid #444;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            .editor-filename {
-                font-family: monospace;
-                color: #e0e0e0;
-            }
-
-            .editor-actions {
-                display: flex;
-                gap: 5px;
-            }
-
-            .editor-content {
-                flex: 1;
-                overflow: auto;
-                padding: 15px;
-            }
-
-            .editor-textarea {
-                width: 100%;
-                height: 100%;
-                background: #1a1a1a;
-                border: none;
-                color: #e0e0e0;
-                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-                font-size: 13px;
-                line-height: 1.4;
-                resize: none;
-                outline: none;
-                padding: 0;
-                margin: 0;
-            }
-
-            .input-area {
-                padding: 15px 20px;
-                background: #2d2d2d;
-                border-top: 1px solid #444;
-                display: flex;
-                gap: 10px;
-                align-items: flex-end;
-            }
-
-            #user-input-streaming {
-                flex: 1;
-                background: #1a1a1a;
-                border: 1px solid #444;
-                border-radius: 4px;
-                color: #e0e0e0;
-                padding: 10px;
-                font-family: inherit;
-                font-size: inherit;
-                resize: vertical;
-                min-height: 60px;
-            }
-
-            #user-input-streaming:focus {
-                outline: none;
-                border-color: #0d7377;
-            }
-
-            .btn {
-                background: #333;
-                border: 1px solid #444;
-                color: #e0e0e0;
-                padding: 8px 16px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-family: inherit;
-                font-size: inherit;
-                transition: background-color 0.2s;
-            }
-
-            .btn:hover {
-                background: #3a3a3a;
-            }
-
-            .btn:disabled {
-                opacity: 0.5;
-                cursor: not-allowed;
-            }
-
-            .btn-primary {
-                background: #0d7377;
-                border-color: #14a085;
-                height: fit-content;
-            }
-
-            .btn-primary:hover:not(:disabled) {
-                background: #0a5d61;
-            }
-
-            .btn-danger {
-                background: #d32f2f;
-                border-color: #f44336;
-            }
-
-            .btn-danger:hover {
-                background: #b71c1c;
-            }
-
-            .status {
-                padding: 10px 20px;
-                background: #2d2d2d;
-                border-top: 1px solid #444;
-                font-size: 12px;
-                color: #aaa;
-                min-height: 20px;
-            }
-
-            .status.processing {
-                color: #ffa726;
-            }
-
-            .status.error {
-                color: #f44336;
-            }
-
-            .status.success {
-                color: #4caf50;
-            }
-
-            .status.ready {
-                color: #4caf50;
-            }
-
-            .status.streaming {
-                color: #ffa726;
-            }
-        `;
-
-        document.head.appendChild(style);
-        document.body.appendChild(container);
-
-        Logger.log('UI', 'Page replacement complete');
-        return container;
-    }
-
-    // Main App
     class StreamingChatApp {
         constructor() {
-            Logger.log('App', 'Initializing Streaming Chat App');
-            this.apiManager = new StreamingAPIManager();
-            this.fileSystem = new FileSystemManager();
-            this.projectManager = new ProjectManager();
-            this.toolManager = new ToolManager(this.fileSystem, this.projectManager);
-            this.streamingParser = new StreamingParser(this.toolManager);
-            this.container = null;
+            this.logger = window.StreamingChatLogger;
+            this.config = window.StreamingChatConfig;
+            this.utils = window.StreamingChatUtils;
+            
+            this.logger.log('App', 'Initializing Streaming Chat App');
+            
+            // Initialize managers
+            this.apiManager = new window.StreamingChatAPIManager();
+            this.fileSystem = new window.StreamingChatFileSystem();
+            this.projectManager = new window.StreamingChatProjectManager();
+            this.toolManager = new window.StreamingChatToolManager(this.fileSystem);
+            this.streamingParser = new window.StreamingChatParser();
+            
+            // UI state
             this.elements = {};
+            this.currentProject = null;
+            this.currentStreamingMessage = null;
             this.lastActivityTime = Date.now();
             this.heartbeatTimer = null;
-            this.currentStreamingMessage = null;
-            this.pendingToolExecutions = [];
             
-            // IDE state
-            this.currentProject = null;
+            // Tab management
             this.openTabs = new Map(); // tabId -> {type, projectId, filePath, content, isDirty}
             this.activeTab = 'chat';
             this.projectChats = new Map(); // projectId -> {messages: [], conversationId: null}
         }
 
         async init() {
-            Logger.log('App', 'Starting initialization');
+            this.logger.log('App', 'Starting initialization');
             
             // Block non-app requests first
-            blockNonAppRequests();
+            window.StreamingChatFetchBlocker.enable();
             
             // Replace entire page with our UI
-            this.container = replacePageWithStreamingUI();
+            this.container = window.StreamingChatUIBuilder.replacePageContent();
             this.bindElements();
             this.bindEvents();
             
@@ -1972,11 +508,11 @@
                 this.updateStatus('Ready - Streaming API', 'ready');
                 this.updateUI();
                 this.startHeartbeat();
-                Logger.log('App', 'Initialization complete');
+                this.logger.log('App', 'Initialization complete');
             } else {
                 this.updateStatus('Authentication required - No token found', 'error');
                 this.updateUI();
-                Logger.error('App', 'Initialization failed - no auth token');
+                this.logger.error('App', 'Initialization failed - no auth token');
             }
         }
 
@@ -2168,172 +704,189 @@
             return container;
         }
 
-        updateActiveProjects() {
-            const activeProjects = this.chatManager.getActiveProjects();
-            this.toolManager.setActiveProjects(activeProjects);
+        updateEditorTabs() {
+            const tabsContainer = this.elements.editorTabs;
             
-            // Update active projects list in chat sidebar
-            const list = this.elements.activeProjectsList;
-            if (list) {
-                list.innerHTML = '';
-                
-                if (activeProjects.length === 0) {
-                    list.innerHTML = '<div style="color: #666; font-size: 12px;">No projects selected</div>';
+            // Always keep chat tab
+            const chatTab = tabsContainer.querySelector('.chat-tab');
+            if (chatTab) {
+                chatTab.classList.toggle('active', this.activeTab === 'chat');
+            }
+            
+            // Update file tabs
+            const fileTabs = tabsContainer.querySelectorAll('.editor-tab:not(.chat-tab)');
+            fileTabs.forEach(tab => {
+                const tabId = tab.dataset.tab;
+                if (!this.openTabs.has(tabId)) {
+                    tab.remove();
                 } else {
-                    activeProjects.forEach(projectId => {
-                        const project = this.projectManager.getProject(projectId);
-                        if (project) {
-                            const item = document.createElement('div');
-                            item.className = 'project-item active';
-                            item.innerHTML = `
-                                <span class="project-name">${project.name}</span>
-                                <button class="project-toggle active">✓</button>
-                            `;
-                            
-                            item.querySelector('.project-toggle').addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                this.toggleProjectForChat(projectId);
-                            });
-                            
-                            list.appendChild(item);
-                        }
-                    });
+                    tab.classList.toggle('active', this.activeTab === tabId);
                 }
-            }
-        }
-
-        updateProjectsUI() {
-            this.updateProjectsList();
-            this.updateFileTree();
-        }
-
-        updateProjectsList() {
-            const list = this.elements.projectsList;
-            if (!list) return;
+            });
             
-            list.innerHTML = '';
-            const projects = this.projectManager.listProjects();
-            
-            if (projects.length === 0) {
-                list.innerHTML = '<div style="color: #666; font-size: 12px;">No projects yet</div>';
-                return;
-            }
-            
-            projects.forEach(project => {
-                const item = document.createElement('div');
-                item.className = 'project-item';
-                if (this.selectedProject === project.id) {
-                    item.classList.add('selected');
+            // Add new file tabs
+            this.openTabs.forEach((tabData, tabId) => {
+                if (tabId === 'chat') return;
+                
+                let tab = tabsContainer.querySelector(`[data-tab="${tabId}"]`);
+                if (!tab) {
+                    tab = document.createElement('div');
+                    tab.className = 'editor-tab';
+                    tab.dataset.tab = tabId;
+                    
+                    const fileName = tabData.filePath.split('/').pop();
+                    tab.innerHTML = `
+                        <span>📄 ${fileName}</span>
+                        <button class="close-btn">×</button>
+                    `;
+                    
+                    tabsContainer.appendChild(tab);
                 }
                 
-                const isActive = this.chatManager.getActiveProjects().includes(project.id);
-                
-                item.innerHTML = `
-                    <span class="project-name">${project.name}</span>
-                    <button class="project-toggle ${isActive ? 'active' : ''}">${isActive ? '✓' : '+'}</button>
-                `;
-                
-                item.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('project-toggle')) return;
-                    this.selectProject(project.id);
-                });
-                
-                item.querySelector('.project-toggle').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.toggleProjectForChat(project.id);
-                });
-                
-                list.appendChild(item);
+                tab.classList.toggle('active', this.activeTab === tabId);
             });
         }
 
-        selectProject(projectId) {
-            this.selectedProject = projectId;
-            this.updateProjectsList();
-            this.updateFileTree();
+        switchToTab(tabId) {
+            this.activeTab = tabId;
             
-            // Show file tree section
-            this.elements.fileTreeSection.style.display = 'block';
-        }
-
-        toggleProjectForChat(projectId) {
-            const activeProjects = this.chatManager.getActiveProjects();
-            const index = activeProjects.indexOf(projectId);
+            // Update tab visual state
+            this.updateEditorTabs();
             
-            if (index === -1) {
-                activeProjects.push(projectId);
+            // Update content
+            const panes = this.elements.editorContent.querySelectorAll('.tab-pane');
+            panes.forEach(pane => {
+                pane.classList.remove('active');
+            });
+            
+            if (tabId === 'chat') {
+                const chatPane = this.elements.editorContent.querySelector('[data-tab="chat"]');
+                if (chatPane) {
+                    chatPane.classList.add('active');
+                }
             } else {
-                activeProjects.splice(index, 1);
+                this.showFileEditor(tabId);
             }
-            
-            this.chatManager.setActiveProjects(activeProjects);
-            this.updateActiveProjects();
-            this.updateProjectsList();
         }
 
-        updateFileTree() {
-            const tree = this.elements.fileTree;
-            if (!tree || !this.selectedProject) return;
+        openFile(filePath) {
+            if (!this.currentProject) return;
             
-            tree.innerHTML = '';
-            const files = this.fileSystem.listFiles(this.selectedProject);
+            const tabId = `${this.currentProject}:${filePath}`;
             
-            if (files.length === 0) {
-                tree.innerHTML = '<div style="color: #666; font-size: 11px;">No files yet</div>';
+            // Check if already open
+            if (this.openTabs.has(tabId)) {
+                this.switchToTab(tabId);
                 return;
             }
             
-            files.forEach(filePath => {
-                const item = document.createElement('div');
-                item.className = 'file-item';
-                if (this.selectedFile === filePath) {
-                    item.classList.add('active');
-                }
-                
-                item.textContent = filePath;
-                item.addEventListener('click', () => {
-                    this.selectFile(filePath);
-                });
-                
-                tree.appendChild(item);
-            });
-        }
-
-        selectFile(filePath) {
-            this.selectedFile = filePath;
-            this.updateFileTree();
-            this.openFileInEditor(filePath);
-        }
-
-        openFileInEditor(filePath) {
-            const content = this.fileSystem.readFile(this.selectedProject, filePath);
-            const editor = this.elements.fileEditor;
+            // Load file content
+            const content = this.fileSystem.readFile(this.currentProject, filePath) || '';
             
-            editor.innerHTML = `
-                <div class="editor-header">
-                    <div class="editor-filename">${filePath}</div>
-                    <div class="editor-actions">
-                        <button class="btn btn-small" onclick="window.aiChatOverlayStreaming.saveCurrentFile()">Save</button>
-                        <button class="btn btn-small" onclick="window.aiChatOverlayStreaming.closeEditor()">Close</button>
-                    </div>
+            // Add to open tabs
+            this.openTabs.set(tabId, {
+                type: 'file',
+                projectId: this.currentProject,
+                filePath: filePath,
+                content: content,
+                isDirty: false
+            });
+            
+            // Update UI and switch to tab
+            this.updateEditorTabs();
+            this.switchToTab(tabId);
+        }
+
+        showFileEditor(tabId) {
+            const tabData = this.openTabs.get(tabId);
+            if (!tabData) return;
+            
+            // Remove existing file editor pane
+            const existingPane = this.elements.editorContent.querySelector('.file-editor-pane');
+            if (existingPane) {
+                existingPane.remove();
+            }
+            
+            // Create file editor pane
+            const pane = document.createElement('div');
+            pane.className = 'tab-pane file-editor-pane active';
+            pane.innerHTML = `
+                <div class="file-actions">
+                    <span class="file-path">${tabData.filePath}</span>
+                    <button class="btn save-btn">Save</button>
                 </div>
-                <div class="editor-content">
-                    <textarea class="editor-textarea" placeholder="Start typing...">${content || ''}</textarea>
+                <div class="file-editor-content">
+                    <textarea class="editor-textarea" placeholder="Start typing...">${tabData.content}</textarea>
                 </div>
             `;
+            
+            this.elements.editorContent.appendChild(pane);
+            
+            // Bind save button
+            const saveBtn = pane.querySelector('.save-btn');
+            const textarea = pane.querySelector('.editor-textarea');
+            
+            saveBtn.addEventListener('click', () => {
+                this.saveFile(tabId);
+            });
+            
+            textarea.addEventListener('input', () => {
+                tabData.content = textarea.value;
+                tabData.isDirty = true;
+                // TODO: Add visual dirty indicator
+            });
+        }
+
+        closeTab(tabId) {
+            if (tabId === 'chat') return; // Can't close chat tab
+            
+            const tabData = this.openTabs.get(tabId);
+            if (tabData && tabData.isDirty) {
+                if (!confirm('File has unsaved changes. Close anyway?')) {
+                    return;
+                }
+            }
+            
+            this.openTabs.delete(tabId);
+            
+            // If closing active tab, switch to chat
+            if (this.activeTab === tabId) {
+                this.switchToTab('chat');
+            } else {
+                this.updateEditorTabs();
+            }
+        }
+
+        saveFile(tabId) {
+            const tabData = this.openTabs.get(tabId);
+            if (!tabData) return;
+            
+            this.fileSystem.writeFile(tabData.projectId, tabData.filePath, tabData.content);
+            tabData.isDirty = false;
+            
+            this.updateStatus('File saved', 'success');
+            setTimeout(() => {
+                this.updateStatus('Ready', 'ready');
+            }, 2000);
+        }
+
+        saveCurrentFile() {
+            if (this.activeTab !== 'chat') {
+                this.saveFile(this.activeTab);
+            }
         }
 
         createNewProject() {
             const name = prompt('Project name:');
             if (name && name.trim()) {
                 const project = this.projectManager.createProject(name.trim());
-                this.updateProjectsList();
+                this.updateProjectDropdown();
                 this.selectProject(project.id);
             }
         }
 
         createNewFile() {
-            if (!this.selectedProject) {
+            if (!this.currentProject) {
                 alert('Please select a project first');
                 return;
             }
@@ -2341,139 +894,46 @@
             const path = prompt('File path (e.g., /src/main.js):');
             if (path && path.trim()) {
                 const filePath = path.trim();
-                this.fileSystem.writeFile(this.selectedProject, filePath, '');
-                this.updateFileTree();
-                this.selectFile(filePath);
+                this.fileSystem.writeFile(this.currentProject, filePath, '');
+                this.updateFileExplorer();
+                this.openFile(filePath);
             }
-        }
-
-        saveCurrentFile() {
-            if (!this.selectedProject || !this.selectedFile) return;
-            
-            const textarea = document.querySelector('.editor-textarea');
-            if (textarea) {
-                this.fileSystem.writeFile(this.selectedProject, this.selectedFile, textarea.value);
-                this.updateStatus('File saved', 'success');
-                setTimeout(() => {
-                    this.updateStatus('Ready - Streaming API', 'ready');
-                }, 2000);
-            }
-        }
-
-        closeEditor() {
-            this.selectedFile = null;
-            this.updateFileTree();
-            this.elements.fileEditor.innerHTML = `
-                <div class="editor-placeholder">
-                    Select a project and file to start editing
-                </div>
-            `;
-        }
-
-        createToolUseIndicator(toolData) {
-            const indicator = document.createElement('div');
-            indicator.className = 'tool-use-indicator';
-            
-            const icon = toolData.tool_type === 'read_file' ? '📖' : '🔍';
-            const mainProp = toolData.tool_type === 'read_file' ? toolData.path : toolData.query;
-            
-            indicator.innerHTML = `
-                <span class="tool-icon">${icon}</span>
-                <span class="tool-main">${mainProp}</span>
-            `;
-            
-            indicator.addEventListener('click', () => {
-                // TODO: Expand tool use details
-                console.log('Tool use clicked:', toolData);
-            });
-            
-            return indicator;
-        }
-
-        createToolResultBubble(toolResult) {
-            const bubble = document.createElement('div');
-            bubble.className = 'message tool-result';
-            
-            const icon = toolResult.tool_type === 'read_file' ? '📖' : '🔍';
-            const title = toolResult.tool_type === 'read_file' ? 
-                `Tool Result: Read File` : 
-                `Tool Result: Search Files`;
-            
-            // Create preview of results
-            let preview = '';
-            if (toolResult.tool_type === 'read_file') {
-                const successCount = toolResult.results.filter(r => r.found).length;
-                preview = `${toolResult.path}\nFound in ${successCount} project(s) [click to expand]`;
-            } else {
-                const totalMatches = toolResult.results.reduce((sum, r) => sum + r.matches.length, 0);
-                preview = `"${toolResult.query}"\nFound ${totalMatches} matches [click to expand]`;
-            }
-            
-            bubble.innerHTML = `
-                <div class="tool-header">
-                    <span class="tool-icon">${icon}</span>
-                    <span class="tool-title">${title}</span>
-                </div>
-                <div class="tool-preview">${preview}</div>
-            `;
-            
-            bubble.addEventListener('click', () => {
-                // TODO: Expand full tool results
-                console.log('Tool result clicked:', toolResult);
-            });
-            
-            return bubble;
-        }
-
-        updateChatList() {
-            const chatList = this.elements.chatList;
-            chatList.innerHTML = '';
-
-            this.chatManager.data.chats.forEach(chat => {
-                const item = document.createElement('div');
-                item.className = 'chat-item';
-                if (chat.id === this.chatManager.data.currentChatId) {
-                    item.classList.add('active');
-                }
-                
-                item.textContent = chat.timestamp;
-                item.addEventListener('click', () => {
-                    this.selectChat(chat.id);
-                });
-                
-                chatList.appendChild(item);
-            });
         }
 
         updateMessages() {
-            const messages = this.elements.messages;
-            messages.innerHTML = '';
-
-            const currentChat = this.chatManager.getCurrentChat();
-            if (!currentChat) return;
-
-            currentChat.messages.forEach((msg) => {
+            if (!this.currentProject) return;
+            
+            const projectChat = this.projectChats.get(this.currentProject);
+            if (!projectChat) return;
+            
+            this.elements.messages.innerHTML = '';
+            
+            projectChat.messages.forEach(msg => {
                 const messageEl = document.createElement('div');
                 messageEl.className = `message ${msg.role}`;
                 messageEl.textContent = msg.content;
-                messages.appendChild(messageEl);
+                this.elements.messages.appendChild(messageEl);
             });
+            
+            this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+        }
 
-            messages.scrollTop = messages.scrollHeight;
+        updateStatus(message, type = 'ready') {
+            this.elements.status.textContent = message;
+            this.elements.status.className = `status-bar ${type}`;
         }
 
         createStreamingMessage() {
             const messageEl = document.createElement('div');
             messageEl.className = 'message assistant streaming';
-            messageEl.textContent = '';
             this.elements.messages.appendChild(messageEl);
             this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
             return messageEl;
         }
 
-        createProgressMessage() {
+        createProgressMessage(message) {
             const messageEl = document.createElement('div');
-            messageEl.className = 'message assistant progress';
+            messageEl.className = 'message progress';
             messageEl.innerHTML = `
                 <div class="progress-bar-container">
                     <div class="progress-bar-fill" style="width: 0%"></div>
@@ -2485,99 +945,126 @@
         }
 
         updateProgressMessage(message, current, total) {
-            if (!this.currentStreamingMessage || !this.currentStreamingMessage.classList.contains('progress')) {
-                return;
-            }
-            
-            const progressFill = this.currentStreamingMessage.querySelector('.progress-bar-fill');
-            
-            if (progressFill) {
-                const percentage = (current / total) * 100;
-                progressFill.style.width = `${percentage}%`;
-                progressFill.style.transition = 'width 0.3s ease';
+            if (this.currentStreamingMessage && this.currentStreamingMessage.classList.contains('progress')) {
+                const fill = this.currentStreamingMessage.querySelector('.progress-bar-fill');
+                if (fill) {
+                    const percentage = Math.round((current / total) * 100);
+                    fill.style.width = `${percentage}%`;
+                }
             }
         }
 
-        updateStatus(text, type = '', progress = null) {
-            let statusText = text;
-            if (progress) {
-                statusText = `${text} (${progress.current}/${progress.total})`;
+        createToolUseIndicator(toolData) {
+            const indicator = document.createElement('span');
+            indicator.className = 'tool-use-indicator';
+            indicator.innerHTML = `
+                <span class="tool-icon">🔧</span>
+                <span class="tool-main">${toolData.tool_type}</span>
+            `;
+            
+            indicator.addEventListener('click', () => {
+                alert(`Tool: ${toolData.tool_type}\n\nParameters:\n${JSON.stringify(toolData, null, 2)}`);
+            });
+            
+            return indicator;
+        }
+
+        createToolResultBubble(result) {
+            const bubble = document.createElement('div');
+            bubble.className = 'message tool-result';
+            
+            const header = document.createElement('div');
+            header.className = 'tool-header';
+            header.innerHTML = `
+                <span class="tool-icon">⚙️</span>
+                <span class="tool-title">Tool Result: ${result.tool_type}</span>
+            `;
+            
+            const preview = document.createElement('div');
+            preview.className = 'tool-preview';
+            
+            if (result.error) {
+                preview.textContent = `Error: ${result.error}`;
+            } else if (result.results && result.results.length > 0) {
+                preview.textContent = `Found ${result.results.length} result(s)`;
+            } else {
+                preview.textContent = 'No results';
             }
-            this.elements.status.textContent = statusText;
-            this.elements.status.className = `status ${type}`;
+            
+            bubble.appendChild(header);
+            bubble.appendChild(preview);
+            
+            bubble.addEventListener('click', () => {
+                alert(`Tool Result:\n\n${JSON.stringify(result, null, 2)}`);
+            });
+            
+            return bubble;
         }
 
         async sendMessage(isHeartbeat = false) {
-            const input = this.elements.userInput;
-            let message;
-            
-            // Check authentication
-            if (!this.apiManager.checkAuthToken()) {
+            if (!this.currentProject) {
                 if (!isHeartbeat) {
-                    this.updateStatus('Authentication required - No token found', 'error');
+                    this.updateStatus('Please select a project first', 'error');
                 }
                 return;
             }
-            
-            if (isHeartbeat) {
-                message = CONFIG.HEARTBEAT_MESSAGE;
-                Logger.log('Heartbeat', 'Sending heartbeat message');
-            } else {
-                message = input.value.trim();
-                if (!message) return;
-                
-                this.updateActivity();
-            }
 
-            if (!this.chatManager.getCurrentChat()) {
-                this.createNewChat();
+            const input = this.elements.userInput;
+            const userMessage = isHeartbeat ? this.config.HEARTBEAT_MESSAGE : input.value.trim();
+
+            if (!userMessage) {
+                if (!isHeartbeat) {
+                    this.updateStatus('Please enter a message', 'error');
+                }
+                return;
             }
 
             if (!isHeartbeat) {
                 this.elements.sendBtn.disabled = true;
                 input.disabled = true;
+                input.value = '';
             }
 
+            const projectChat = this.projectChats.get(this.currentProject);
+            const existingConversationId = projectChat ? projectChat.conversationId : null;
+
             try {
+                this.updateActivity();
+
                 if (!isHeartbeat) {
-                    // Add user message immediately
-                    this.chatManager.addMessage('user', message);
-                    this.updateMessages();
-                    input.value = '';
-                    
-                    // Create progress message element
-                    this.currentStreamingMessage = this.createProgressMessage();
-                    
-                    // Initial status
-                    this.updateStatus('Processing...', 'streaming');
-                }
-                
-                // Get conversation history and existing conversation ID
-                const conversationHistory = isHeartbeat ? [] : 
-                    this.chatManager.getConversationHistory().slice(0, -1); // Exclude the message we just added
-                const existingConversationId = isHeartbeat ? null : this.chatManager.getConversationId();
-                
-                let streamContent = '';
-                let newConversationId = null;
-                
-                // Reset streaming parser for new message
-                if (!isHeartbeat) {
+                    // Add user message to chat
+                    const userMessageEl = document.createElement('div');
+                    userMessageEl.className = 'message user';
+                    userMessageEl.textContent = userMessage;
+                    this.elements.messages.appendChild(userMessageEl);
+                    this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+
+                    // Add to project chat history
+                    if (projectChat) {
+                        projectChat.messages.push({
+                            role: 'user',
+                            content: userMessage,
+                            timestamp: Date.now()
+                        });
+                    }
+
+                    // Create progress message
+                    this.currentStreamingMessage = this.createProgressMessage('Starting...');
                     this.streamingParser.reset();
                 }
-                
+
                 const result = await this.apiManager.sendMessage(
-                    message,
-                    conversationHistory,
+                    userMessage,
+                    projectChat ? projectChat.messages.slice(0, -1) : [], // Exclude just-added user message
                     existingConversationId,
                     // onChunk
                     (chunk) => {
-                        if (!isHeartbeat && this.currentStreamingMessage) {
-                            // Process chunk through parser
+                        if (!isHeartbeat) {
                             const parseResult = this.streamingParser.processChunk(chunk);
                             
-                            // Update display with parsed text (no raw tool uses)
-                            streamContent += parseResult.displayText;
-                            this.currentStreamingMessage.textContent = streamContent;
+                            if (this.currentStreamingMessage) {
+                                this.currentStreamingMessage.textContent += parseResult.displayText;
+                            }
                             
                             // Add tool use indicators inline
                             parseResult.toolUses.forEach(toolUse => {
@@ -2592,9 +1079,9 @@
                     // onComplete
                     async () => {
                         if (isHeartbeat) {
-                            Logger.log('Heartbeat', 'Heartbeat completed successfully');
+                            this.logger.log('Heartbeat', 'Heartbeat completed successfully');
                         } else {
-                            Logger.log('App', 'Streaming completed');
+                            this.logger.log('App', 'Streaming completed');
                             
                             // Remove streaming indicator
                             if (this.currentStreamingMessage) {
@@ -2605,7 +1092,7 @@
                             const toolUses = this.streamingParser.getToolUses();
                             
                             if (toolUses.length > 0) {
-                                Logger.log('App', 'Executing tools', { count: toolUses.length });
+                                this.logger.log('App', 'Executing tools', { count: toolUses.length });
                                 this.updateStatus('Executing tools...', 'streaming');
                                 
                                 // Execute all tools
@@ -2620,7 +1107,7 @@
                                         this.elements.messages.appendChild(resultBubble);
                                         this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
                                     } catch (error) {
-                                        Logger.error('App', 'Tool execution failed', error);
+                                        this.logger.error('App', 'Tool execution failed', error);
                                         const errorBubble = this.createToolResultBubble({
                                             tool_type: toolUse.data.tool_type,
                                             error: error.message,
@@ -2638,8 +1125,12 @@
                             
                             // Save the complete response
                             const completeOutput = this.streamingParser.getCompleteOutput();
-                            if (completeOutput) {
-                                this.chatManager.addMessage('assistant', completeOutput);
+                            if (completeOutput && projectChat) {
+                                projectChat.messages.push({
+                                    role: 'assistant',
+                                    content: completeOutput,
+                                    timestamp: Date.now()
+                                });
                             }
                             
                             this.currentStreamingMessage = null;
@@ -2649,7 +1140,7 @@
                     // onError
                     (error) => {
                         if (!isHeartbeat) {
-                            Logger.error('App', 'Streaming failed', error);
+                            this.logger.error('App', 'Streaming failed', error);
                             
                             // Remove streaming message on error
                             if (this.currentStreamingMessage) {
@@ -2663,7 +1154,7 @@
                                 this.updateStatus(`Error: ${error.message}`, 'error');
                             }
                         } else {
-                            Logger.error('Heartbeat', 'Heartbeat failed', error);
+                            this.logger.error('Heartbeat', 'Heartbeat failed', error);
                         }
                     },
                     // onProgress
@@ -2684,16 +1175,17 @@
                 );
                 
                 // Save conversation ID for new conversations (after await completes)
-                if (!isHeartbeat && result && result.conversationId && !existingConversationId) {
-                    this.chatManager.setConversationId(result.conversationId);
-                    Logger.log('App', 'Saved new conversation ID', { 
-                        conversationId: result.conversationId 
+                if (!isHeartbeat && result && result.conversationId && !existingConversationId && projectChat) {
+                    projectChat.conversationId = result.conversationId;
+                    this.logger.log('App', 'Saved new conversation ID for project', { 
+                        conversationId: result.conversationId,
+                        projectId: this.currentProject
                     });
                 }
                 
             } catch (error) {
                 if (!isHeartbeat) {
-                    Logger.error('App', 'Send message failed', error);
+                    this.logger.error('App', 'Send message failed', error);
                     this.updateStatus(`Error: ${error.message}`, 'error');
                 }
             } finally {
@@ -2710,7 +1202,7 @@
         }
 
         startHeartbeat() {
-            Logger.log('Heartbeat', 'Starting heartbeat system');
+            this.logger.log('Heartbeat', 'Starting heartbeat system');
             
             if (this.heartbeatTimer) {
                 clearInterval(this.heartbeatTimer);
@@ -2719,8 +1211,8 @@
             this.heartbeatTimer = setInterval(() => {
                 const timeSinceActivity = Date.now() - this.lastActivityTime;
                 
-                if (timeSinceActivity >= CONFIG.HEARTBEAT_INTERVAL) {
-                    Logger.log('Heartbeat', 'Sending heartbeat to keep session alive');
+                if (timeSinceActivity >= this.config.HEARTBEAT_INTERVAL) {
+                    this.logger.log('Heartbeat', 'Sending heartbeat to keep session alive');
                     this.sendMessage(true);
                     this.updateActivity();
                 }
@@ -2738,19 +1230,1117 @@
             this.apiManager.clearActivityTimeout();
             this.stopHeartbeat();
             // Since we replaced the entire page, just reload to restore original
-            Logger.log('App', 'Closing - reloading page to restore original interface');
+            this.logger.log('App', 'Closing - reloading page to restore original interface');
             window.location.reload();
         }
     }
 
-    // Initialize the streaming app
-    Logger.log('Main', 'Loading Streaming AI Chat Overlay');
-    const app = new StreamingChatApp();
-    app.init();
+    window.StreamingChatApp = StreamingChatApp;
 
-    window.aiChatOverlayStreaming = app;
+})();
 
-    Logger.log('Main', 'Streaming AI Chat Overlay loaded successfully');
-    console.log('Streaming AI Chat Overlay loaded! Access via window.aiChatOverlayStreaming');
+// ===== config.js =====
+(function() {
+    'use strict';
+
+    window.StreamingChatConfig = {
+        STORAGE_KEY: 'ai_chat_overlay_streaming_data',
+        PROJECTS_KEY: 'ai_chat_projects',
+        HEARTBEAT_INTERVAL: 60000, // 60 seconds
+        HEARTBEAT_MESSAGE: 'respond "k"',
+        OVERALL_TIMEOUT: 10 * 60 * 1000, // 10 minutes
+        POLLING_INTERVAL: 1000, // 1 second
+        SESSION_ID: '11111111111111111111', // 20 ones
+        NEW_CHAT_ENDPOINT: '/api/v1/chats/new',
+        GET_CHAT_ENDPOINT: '/api/v1/chats/',
+        COMPLETIONS_ENDPOINT: '/api/chat/completions',
+        
+        APP_ENDPOINTS: [
+            '/api/v1/chats/new',
+            '/api/v1/chats/',
+            '/api/chat/completions'
+        ]
+    };
+
+})();
+
+// ===== fetch-blocker.js =====
+(function() {
+    'use strict';
+
+    window.StreamingChatFetchBlocker = {
+        enable: () => {
+            const originalFetch = window.fetch;
+            const Logger = window.StreamingChatLogger;
+            const Config = window.StreamingChatConfig;
+            
+            window.fetch = function(url, options = {}) {
+                // Check if this request is from our app
+                const isAppRequest = Config.APP_ENDPOINTS.some(endpoint => {
+                    if (typeof url === 'string') {
+                        return url.includes(endpoint);
+                    } else if (url && url.href) {
+                        return url.href.includes(endpoint);
+                    }
+                    return false;
+                });
+                
+                if (isAppRequest) {
+                    Logger.log('FetchBlock', 'Allowing app request', { url: url.toString() });
+                    return originalFetch.call(this, url, options);
+                } else {
+                    Logger.log('FetchBlock', 'Blocking non-app request', { url: url.toString() });
+                    // Return a rejected promise to block the request
+                    return Promise.reject(new Error('Request blocked: not from streaming chat app'));
+                }
+            };
+            
+            Logger.log('FetchBlock', 'Fetch blocking enabled - only app requests allowed');
+        }
+    };
+
+})();
+
+// ===== file-system.js =====
+(function() {
+    'use strict';
+
+    class FileSystemManager {
+        constructor() {
+            this.logger = window.StreamingChatLogger;
+            this.logger.log('FileSystem', 'Initializing File System Manager');
+        }
+
+        getFileKey(projectId, filePath) {
+            // Clean the path to ensure consistency
+            const cleanPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
+            return `file-system.${projectId}.${cleanPath}`;
+        }
+
+        writeFile(projectId, filePath, content) {
+            try {
+                const key = this.getFileKey(projectId, filePath);
+                localStorage.setItem(key, content);
+                this.logger.log('FileSystem', 'File written', { projectId, filePath, size: content.length });
+                return true;
+            } catch (error) {
+                this.logger.error('FileSystem', 'Failed to write file', error);
+                return false;
+            }
+        }
+
+        readFile(projectId, filePath) {
+            try {
+                const key = this.getFileKey(projectId, filePath);
+                const content = localStorage.getItem(key);
+                this.logger.log('FileSystem', 'File read', { projectId, filePath, found: !!content });
+                return content;
+            } catch (error) {
+                this.logger.error('FileSystem', 'Failed to read file', error);
+                return null;
+            }
+        }
+
+        deleteFile(projectId, filePath) {
+            try {
+                const key = this.getFileKey(projectId, filePath);
+                localStorage.removeItem(key);
+                this.logger.log('FileSystem', 'File deleted', { projectId, filePath });
+                return true;
+            } catch (error) {
+                this.logger.error('FileSystem', 'Failed to delete file', error);
+                return false;
+            }
+        }
+
+        listFiles(projectId) {
+            try {
+                const prefix = `file-system.${projectId}.`;
+                const files = [];
+
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith(prefix)) {
+                        const filePath = key.substring(prefix.length);
+                        files.push('/' + filePath);
+                    }
+                }
+
+                this.logger.log('FileSystem', 'Files listed', { projectId, count: files.length });
+                return files.sort();
+            } catch (error) {
+                this.logger.error('FileSystem', 'Failed to list files', error);
+                return [];
+            }
+        }
+
+        searchFiles(projectId, query) {
+            try {
+                const results = [];
+                const files = this.listFiles(projectId);
+
+                files.forEach(filePath => {
+                    const content = this.readFile(projectId, filePath);
+                    if (content && content.toLowerCase().includes(query.toLowerCase())) {
+                        const lines = content.split('\n');
+                        const matchingLines = [];
+
+                        lines.forEach((line, index) => {
+                            if (line.toLowerCase().includes(query.toLowerCase())) {
+                                matchingLines.push({
+                                    line_number: index + 1,
+                                    content: line.trim()
+                                });
+                            }
+                        });
+
+                        if (matchingLines.length > 0) {
+                            results.push({
+                                file_path: filePath,
+                                matches: matchingLines
+                            });
+                        }
+                    }
+                });
+
+                this.logger.log('FileSystem', 'Search completed', { 
+                    projectId, 
+                    query, 
+                    filesSearched: files.length, 
+                    filesWithMatches: results.length 
+                });
+                
+                return results;
+            } catch (error) {
+                this.logger.error('FileSystem', 'Search failed', error);
+                return [];
+            }
+        }
+    }
+
+    window.StreamingChatFileSystem = FileSystemManager;
+
+})();
+
+// ===== logger.js =====
+(function() {
+    'use strict';
+
+    window.StreamingChatLogger = {
+        log: (category, message, data = null) => {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [${category}] ${message}`;
+            console.log(logMessage, data || '');
+        },
+        error: (category, message, error = null) => {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [${category}] ERROR: ${message}`;
+            console.error(logMessage, error || '');
+        },
+        warn: (category, message, data = null) => {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [${category}] WARNING: ${message}`;
+            console.warn(logMessage, data || '');
+        }
+    };
+
+})();
+
+// ===== project-manager.js =====
+(function() {
+    'use strict';
+
+    class ProjectManager {
+        constructor() {
+            this.logger = window.StreamingChatLogger;
+            this.config = window.StreamingChatConfig;
+            this.utils = window.StreamingChatUtils;
+            this.logger.log('ProjectManager', 'Initializing Project Manager');
+        }
+
+        saveProjects(projects) {
+            try {
+                localStorage.setItem(this.config.PROJECTS_KEY, JSON.stringify(projects));
+                return true;
+            } catch (error) {
+                this.logger.error('ProjectManager', 'Failed to save projects', error);
+                return false;
+            }
+        }
+
+        loadProjects() {
+            try {
+                const data = localStorage.getItem(this.config.PROJECTS_KEY);
+                return data ? JSON.parse(data) : [];
+            } catch (error) {
+                this.logger.error('ProjectManager', 'Failed to load projects', error);
+                return [];
+            }
+        }
+
+        createProject(name) {
+            const projects = this.loadProjects();
+            const project = {
+                id: this.utils.generateUUID(),
+                name: name,
+                created: Date.now(),
+                files: []
+            };
+
+            projects.push(project);
+            this.saveProjects(projects);
+
+            this.logger.log('ProjectManager', 'Project created', { 
+                id: project.id, 
+                name: project.name 
+            });
+
+            return project;
+        }
+
+        getProject(id) {
+            const projects = this.loadProjects();
+            return projects.find(p => p.id === id);
+        }
+
+        listProjects() {
+            return this.loadProjects();
+        }
+
+        deleteProject(id) {
+            const projects = this.loadProjects();
+            const index = projects.findIndex(p => p.id === id);
+            
+            if (index !== -1) {
+                const project = projects[index];
+                projects.splice(index, 1);
+                this.saveProjects(projects);
+
+                this.logger.log('ProjectManager', 'Project deleted', { 
+                    id: project.id, 
+                    name: project.name 
+                });
+
+                return true;
+            }
+
+            return false;
+        }
+
+        updateProject(id, updates) {
+            const projects = this.loadProjects();
+            const project = projects.find(p => p.id === id);
+            
+            if (project) {
+                Object.assign(project, updates);
+                this.saveProjects(projects);
+
+                this.logger.log('ProjectManager', 'Project updated', { 
+                    id: project.id, 
+                    updates 
+                });
+
+                return project;
+            }
+
+            return null;
+        }
+    }
+
+    window.StreamingChatProjectManager = ProjectManager;
+
+})();
+
+// ===== streaming-parser.js =====
+(function() {
+    'use strict';
+
+    class StreamingParser {
+        constructor() {
+            this.logger = window.StreamingChatLogger;
+            this.buffer = '';
+            this.completeOutput = '';
+            this.toolUses = [];
+            this.logger.log('StreamingParser', 'Initializing Streaming Parser');
+        }
+
+        reset() {
+            this.buffer = '';
+            this.completeOutput = '';
+            this.toolUses = [];
+            this.logger.log('StreamingParser', 'Parser reset');
+        }
+
+        processChunk(chunk) {
+            this.buffer += chunk;
+            this.completeOutput += chunk;
+
+            const parseResult = {
+                displayText: chunk,
+                toolUses: []
+            };
+
+            // Look for complete tool use patterns in the buffer
+            const toolUseRegex = /<tool_use>(\{[^}]*\})<\/tool_use>/g;
+            let match;
+            let lastIndex = 0;
+            let bufferModified = false;
+
+            while ((match = toolUseRegex.exec(this.buffer)) !== null) {
+                try {
+                    const toolData = JSON.parse(match[1]);
+                    this.toolUses.push({
+                        fullMatch: match[0],
+                        data: toolData,
+                        position: match.index
+                    });
+
+                    parseResult.toolUses.push({
+                        fullMatch: match[0],
+                        data: toolData
+                    });
+
+                    bufferModified = true;
+                } catch (e) {
+                    this.logger.warn('StreamingParser', 'Failed to parse tool JSON', { 
+                        json: match[1] 
+                    });
+                }
+            }
+
+            // Remove processed tool uses from display text
+            if (bufferModified) {
+                let cleanChunk = chunk;
+                parseResult.toolUses.forEach(toolUse => {
+                    cleanChunk = cleanChunk.replace(toolUse.fullMatch, '');
+                });
+                parseResult.displayText = cleanChunk;
+            }
+
+            return parseResult;
+        }
+
+        getToolUses() {
+            return this.toolUses.map(tu => tu);
+        }
+
+        getCompleteOutput() {
+            // Return output with tool use tags removed
+            let cleanOutput = this.completeOutput;
+            this.toolUses.forEach(toolUse => {
+                cleanOutput = cleanOutput.replace(toolUse.fullMatch, '');
+            });
+            return cleanOutput;
+        }
+    }
+
+    window.StreamingChatParser = StreamingParser;
+
+})();
+
+// ===== tool-manager.js =====
+(function() {
+    'use strict';
+
+    class ToolManager {
+        constructor(fileSystem) {
+            this.logger = window.StreamingChatLogger;
+            this.fileSystem = fileSystem;
+            this.activeProjects = [];
+            this.logger.log('ToolManager', 'Initializing Tool Manager');
+        }
+
+        setActiveProjects(projectIds) {
+            this.activeProjects = Array.isArray(projectIds) ? projectIds : [projectIds];
+            this.logger.log('ToolManager', 'Active projects updated', { 
+                activeProjects: this.activeProjects 
+            });
+        }
+
+        async executeTool(toolData) {
+            this.logger.log('ToolManager', 'Executing tool', { 
+                tool_type: toolData.tool_type,
+                activeProjects: this.activeProjects 
+            });
+
+            try {
+                switch (toolData.tool_type) {
+                    case 'read_file':
+                        return await this.executeReadFile(toolData);
+                    case 'search_files':
+                        return await this.executeSearchFiles(toolData);
+                    default:
+                        throw new Error(`Unknown tool type: ${toolData.tool_type}`);
+                }
+            } catch (error) {
+                this.logger.error('ToolManager', 'Tool execution failed', error);
+                return {
+                    tool_type: toolData.tool_type,
+                    error: error.message,
+                    results: []
+                };
+            }
+        }
+
+        async executeReadFile(toolData) {
+            const results = [];
+
+            if (!toolData.file_path) {
+                throw new Error('file_path is required for read_file tool');
+            }
+
+            for (const projectId of this.activeProjects) {
+                const content = this.fileSystem.readFile(projectId, toolData.file_path);
+                
+                if (content !== null) {
+                    results.push({
+                        project_id: projectId,
+                        file_path: toolData.file_path,
+                        content: content,
+                        size: content.length
+                    });
+                } else {
+                    results.push({
+                        project_id: projectId,
+                        file_path: toolData.file_path,
+                        error: 'File not found'
+                    });
+                }
+            }
+
+            return {
+                tool_type: 'read_file',
+                file_path: toolData.file_path,
+                results: results
+            };
+        }
+
+        async executeSearchFiles(toolData) {
+            const results = [];
+
+            if (!toolData.query) {
+                throw new Error('query is required for search_files tool');
+            }
+
+            for (const projectId of this.activeProjects) {
+                const searchResults = this.fileSystem.searchFiles(projectId, toolData.query);
+                
+                if (searchResults.length > 0) {
+                    results.push({
+                        project_id: projectId,
+                        query: toolData.query,
+                        matches: searchResults
+                    });
+                } else {
+                    results.push({
+                        project_id: projectId,
+                        query: toolData.query,
+                        matches: []
+                    });
+                }
+            }
+
+            return {
+                tool_type: 'search_files',
+                query: toolData.query,
+                results: results
+            };
+        }
+    }
+
+    window.StreamingChatToolManager = ToolManager;
+
+})();
+
+// ===== ui-builder.js =====
+(function() {
+    'use strict';
+
+    window.StreamingChatUIBuilder = {
+        createHTML: () => {
+            return `
+                <div class="streaming-chat-ide">
+                    <div class="left-panel">
+                        <div class="project-selector">
+                            <select id="project-dropdown">
+                                <option value="">Select Project...</option>
+                                <option value="__new__">+ Create New Project</option>
+                            </select>
+                        </div>
+                        
+                        <div class="file-explorer" id="file-explorer">
+                            <div class="no-project">Select a project to view files</div>
+                        </div>
+                    </div>
+                    
+                    <div class="right-panel">
+                        <div class="editor-tabs" id="editor-tabs">
+                            <div class="editor-tab chat-tab active" data-tab="chat">
+                                💬 Chat
+                            </div>
+                        </div>
+                        
+                        <div class="editor-content" id="editor-content">
+                            <div class="tab-pane chat-container active" data-tab="chat">
+                                <div class="messages" id="messages-streaming"></div>
+                                
+                                <div class="input-container">
+                                    <div class="status-bar" id="status-streaming">Ready</div>
+                                    <div class="input-wrapper">
+                                        <textarea id="user-input-streaming" 
+                                                placeholder="Type your message... (Shift+Enter for new line, Enter to send)"
+                                                rows="3"></textarea>
+                                        <button id="send-btn-streaming" class="btn btn-primary">Send</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        },
+
+        createCSS: () => {
+            return `
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: #1a1a1a;
+                    color: #e0e0e0;
+                    height: 100vh;
+                    overflow: hidden;
+                }
+
+                .streaming-chat-ide {
+                    display: flex;
+                    height: 100vh;
+                    background: #1a1a1a;
+                }
+
+                .left-panel {
+                    width: 300px;
+                    background: #252525;
+                    border-right: 1px solid #444;
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                .right-panel {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                .project-selector {
+                    padding: 15px;
+                    border-bottom: 1px solid #444;
+                }
+
+                #project-dropdown {
+                    width: 100%;
+                    background: #333;
+                    border: 1px solid #555;
+                    color: #e0e0e0;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                }
+
+                .file-explorer {
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 15px;
+                    position: relative;
+                }
+
+                .no-project {
+                    color: #666;
+                    text-align: center;
+                    margin-top: 50px;
+                    font-size: 14px;
+                }
+
+                .file-tree {
+                    font-size: 13px;
+                }
+
+                .file-item, .folder-item {
+                    padding: 4px 8px;
+                    cursor: pointer;
+                    border-radius: 3px;
+                    margin: 1px 0;
+                }
+
+                .file-item:hover, .folder-item:hover {
+                    background: #333;
+                }
+
+                .folder-item {
+                    font-weight: 500;
+                }
+
+                .folder-icon {
+                    display: inline-block;
+                    margin-right: 6px;
+                    transition: transform 0.2s;
+                }
+
+                .folder-item.expanded .folder-icon {
+                    transform: rotate(90deg);
+                }
+
+                .editor-tabs {
+                    background: #2d2d2d;
+                    border-bottom: 1px solid #444;
+                    display: flex;
+                    align-items: center;
+                    min-height: 40px;
+                    overflow-x: auto;
+                }
+
+                .editor-tab {
+                    padding: 8px 16px;
+                    background: #333;
+                    border-right: 1px solid #444;
+                    cursor: pointer;
+                    font-size: 13px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    white-space: nowrap;
+                    position: relative;
+                }
+
+                .editor-tab:hover {
+                    background: #404040;
+                }
+
+                .editor-tab.active {
+                    background: #1a1a1a;
+                    border-bottom: 2px solid #0d7377;
+                }
+
+                .editor-tab .close-btn {
+                    background: none;
+                    border: none;
+                    color: #aaa;
+                    cursor: pointer;
+                    padding: 0;
+                    width: 16px;
+                    height: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 2px;
+                    font-size: 14px;
+                    line-height: 1;
+                }
+
+                .editor-tab .close-btn:hover {
+                    background: #555;
+                    color: white;
+                }
+
+                .editor-content {
+                    flex: 1;
+                    background: #1a1a1a;
+                    overflow: hidden;
+                    position: relative;
+                }
+
+                .tab-pane {
+                    display: none;
+                    height: 100%;
+                    flex-direction: column;
+                }
+
+                .tab-pane.active {
+                    display: flex;
+                }
+
+                .chat-container {
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                }
+
+                .file-editor-pane {
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                }
+
+                .file-editor-content {
+                    flex: 1;
+                    overflow: hidden;
+                    position: relative;
+                }
+
+                .editor-textarea {
+                    width: 100%;
+                    height: 100%;
+                    background: #1a1a1a;
+                    border: none;
+                    color: #e0e0e0;
+                    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                    font-size: 13px;
+                    line-height: 1.4;
+                    resize: none;
+                    outline: none;
+                    padding: 15px;
+                    margin: 0;
+                }
+
+                .file-actions {
+                    background: #2d2d2d;
+                    border-bottom: 1px solid #444;
+                    padding: 8px 15px;
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                }
+
+                .file-actions .btn {
+                    padding: 4px 8px;
+                    font-size: 11px;
+                }
+
+                .file-path {
+                    flex: 1;
+                    font-family: monospace;
+                    font-size: 12px;
+                    color: #aaa;
+                }
+
+                .new-file-btn {
+                    position: absolute;
+                    top: 10px;
+                    right: 10px;
+                    background: #0d7377;
+                    border: none;
+                    color: white;
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    font-size: 14px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .new-file-btn:hover {
+                    background: #0a5d61;
+                }
+
+                .messages {
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 20px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 15px;
+                }
+
+                .message {
+                    max-width: 80%;
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                }
+
+                .message.user {
+                    align-self: flex-end;
+                    background: #0d7377;
+                    border: 1px solid #14a085;
+                }
+
+                .message.assistant {
+                    align-self: flex-start;
+                    background: #2d2d2d;
+                    border: 1px solid #444;
+                }
+
+                .message.streaming {
+                    border-left: 3px solid #ffa726;
+                }
+
+                .message.progress {
+                    border-left: 3px solid #2196f3;
+                    padding: 8px 16px;
+                    min-height: 20px;
+                    display: flex;
+                    align-items: center;
+                }
+
+                .progress-bar-container {
+                    width: 100%;
+                    height: 8px;
+                    background: #444;
+                    border-radius: 4px;
+                    overflow: hidden;
+                }
+
+                .progress-bar-fill {
+                    height: 100%;
+                    background: linear-gradient(90deg, #2196f3, #64b5f6);
+                    border-radius: 4px;
+                    transition: width 0.3s ease;
+                }
+
+                .message.tool-result {
+                    border-left: 3px solid #9c27b0;
+                    background: #2a2a2a;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                }
+
+                .message.tool-result:hover {
+                    background: #333;
+                }
+
+                .tool-use-indicator {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: #3a3a3a;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    margin: 2px 4px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                }
+
+                .tool-use-indicator:hover {
+                    background: #444;
+                }
+
+                .tool-icon {
+                    font-size: 14px;
+                }
+
+                .tool-main {
+                    font-size: 12px;
+                    color: #ccc;
+                    font-family: monospace;
+                }
+
+                .tool-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    margin-bottom: 8px;
+                    font-weight: bold;
+                }
+
+                .tool-title {
+                    color: #e0e0e0;
+                }
+
+                .tool-preview {
+                    font-size: 12px;
+                    color: #aaa;
+                    white-space: pre-line;
+                }
+
+                .input-container {
+                    border-top: 1px solid #444;
+                    background: #252525;
+                }
+
+                .status-bar {
+                    padding: 6px 20px;
+                    font-size: 12px;
+                    border-bottom: 1px solid #444;
+                    background: #2d2d2d;
+                }
+
+                .status-bar.ready { color: #4caf50; }
+                .status-bar.error { color: #f44336; }
+                .status-bar.streaming { color: #ffa726; }
+                .status-bar.success { color: #4caf50; }
+
+                .input-wrapper {
+                    display: flex;
+                    padding: 15px 20px;
+                    gap: 10px;
+                    align-items: flex-end;
+                }
+
+                #user-input-streaming {
+                    flex: 1;
+                    background: #333;
+                    border: 1px solid #555;
+                    color: #e0e0e0;
+                    padding: 10px 12px;
+                    border-radius: 4px;
+                    resize: vertical;
+                    min-height: 40px;
+                    max-height: 120px;
+                    font-family: inherit;
+                    font-size: 14px;
+                    line-height: 1.4;
+                }
+
+                #user-input-streaming:focus {
+                    outline: none;
+                    border-color: #0d7377;
+                }
+
+                .btn {
+                    background: #0d7377;
+                    border: none;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    font-weight: 500;
+                    transition: background-color 0.2s;
+                }
+
+                .btn:hover {
+                    background: #0a5d61;
+                }
+
+                .btn:disabled {
+                    background: #666;
+                    cursor: not-allowed;
+                }
+
+                .btn-small {
+                    padding: 6px 12px;
+                    font-size: 11px;
+                }
+
+                .btn-primary {
+                    background: #0d7377;
+                }
+
+                .btn-secondary {
+                    background: #666;
+                }
+
+                /* Custom scrollbars */
+                ::-webkit-scrollbar {
+                    width: 8px;
+                    height: 8px;
+                }
+
+                ::-webkit-scrollbar-track {
+                    background: #2d2d2d;
+                }
+
+                ::-webkit-scrollbar-thumb {
+                    background: #555;
+                    border-radius: 4px;
+                }
+
+                ::-webkit-scrollbar-thumb:hover {
+                    background: #666;
+                }
+            `;
+        },
+
+        replacePageContent: () => {
+            const Logger = window.StreamingChatLogger;
+            Logger.log('UI', 'Completely replacing page content');
+            
+            // Clear entire page
+            document.head.innerHTML = '';
+            document.body.innerHTML = '';
+            
+            // Add basic meta tags
+            const meta = document.createElement('meta');
+            meta.setAttribute('charset', 'UTF-8');
+            document.head.appendChild(meta);
+            
+            const viewport = document.createElement('meta');
+            viewport.setAttribute('name', 'viewport');
+            viewport.setAttribute('content', 'width=device-width, initial-scale=1.0');
+            document.head.appendChild(viewport);
+            
+            // Add title
+            const title = document.createElement('title');
+            title.textContent = 'AI Chat Streaming IDE';
+            document.head.appendChild(title);
+            
+            // Add CSS
+            const style = document.createElement('style');
+            style.textContent = window.StreamingChatUIBuilder.createCSS();
+            document.head.appendChild(style);
+            
+            // Set body HTML
+            document.body.innerHTML = window.StreamingChatUIBuilder.createHTML();
+            
+            Logger.log('UI', 'Page content replaced successfully');
+            return document.body;
+        }
+    };
+
+})();
+
+// ===== utils.js =====
+(function() {
+    'use strict';
+
+    window.StreamingChatUtils = {
+        generateUUID: () => {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        },
+        
+        get13DigitTimestamp: () => {
+            return Date.now();
+        },
+        
+        get10DigitTimestamp: () => {
+            return Math.floor(Date.now() / 1000);
+        }
+    };
+
+})();
+
+// ===== zz-app-starter.js (INITIALIZATION) =====
+(function() {
+    'use strict';
+
+    // Wait for DOM to be ready
+    function initializeApp() {
+        const Logger = window.StreamingChatLogger;
+        Logger.log('Main', 'Loading Streaming AI Chat Overlay');
+        
+        try {
+            const app = new window.StreamingChatApp();
+            app.init();
+            
+            // Expose to window for debugging and external access
+            window.aiChatOverlayStreaming = app;
+            
+            Logger.log('Main', 'Streaming AI Chat Overlay loaded successfully');
+            console.log('Streaming AI Chat Overlay loaded! Access via window.aiChatOverlayStreaming');
+            
+        } catch (error) {
+            Logger.error('Main', 'Failed to initialize app', error);
+            console.error('Failed to initialize Streaming AI Chat Overlay:', error);
+        }
+    }
+
+    // Initialize immediately since we're replacing the entire page
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    } else {
+        initializeApp();
+    }
 
 })();
