@@ -1249,64 +1249,37 @@
         const container = document.createElement('div');
         container.id = 'ai-chat-interface';
         container.innerHTML = `
-            <div class="app-container">
-                <div class="app-header">
-                    <div class="tabs">
-                        <button id="chat-tab" class="tab-btn active">Chat</button>
-                        <button id="projects-tab" class="tab-btn">Projects</button>
+            <div class="ide-container">
+                <div class="left-panel">
+                    <div class="project-selector">
+                        <select id="project-dropdown">
+                            <option value="">Select Project...</option>
+                            <option value="__new__">+ Create New Project</option>
+                        </select>
                     </div>
-                    <div class="header-controls">
-                        <button id="close-overlay-streaming" class="btn btn-danger">×</button>
-                    </div>
-                </div>
-                
-                <!-- Chat Tab Content -->
-                <div id="chat-content" class="tab-content active">
-                    <div class="chat-container">
-                        <div class="chat-sidebar">
-                            <div class="sidebar-section">
-                                <h3>Previous Chats</h3>
-                                <button id="new-chat-streaming" class="btn btn-small">+ New Chat</button>
-                                <div id="chat-list-streaming" class="chat-list"></div>
-                            </div>
-                            <div class="sidebar-section">
-                                <h3>Active Projects</h3>
-                                <div id="active-projects-list" class="project-list"></div>
-                            </div>
-                        </div>
-                        
-                        <div class="main-chat">
-                            <div id="messages-streaming" class="messages"></div>
-                            <div class="input-area">
-                                <textarea id="user-input-streaming" placeholder="Type your message..." rows="3"></textarea>
-                                <button id="send-btn-streaming" class="btn btn-primary">Send</button>
-                            </div>
-                            <div id="status-streaming" class="status">Ready - Streaming API</div>
-                        </div>
+                    
+                    <div class="file-explorer" id="file-explorer">
+                        <div class="no-project">Select a project to view files</div>
                     </div>
                 </div>
                 
-                <!-- Projects Tab Content -->
-                <div id="projects-content" class="tab-content">
-                    <div class="projects-container">
-                        <div class="projects-sidebar">
-                            <div class="sidebar-section">
-                                <h3>Projects</h3>
-                                <button id="new-project-btn" class="btn btn-small">+ New Project</button>
-                                <div id="projects-list" class="projects-list"></div>
-                            </div>
-                            <div class="sidebar-section" id="file-tree-section" style="display: none;">
-                                <h3>Files</h3>
-                                <button id="new-file-btn" class="btn btn-small">+ New File</button>
-                                <div id="file-tree" class="file-tree"></div>
-                            </div>
+                <div class="right-panel">
+                    <div class="editor-tabs" id="editor-tabs">
+                        <div class="editor-tab chat-tab active" data-tab="chat">
+                            💬 Chat
                         </div>
-                        
-                        <div class="main-projects">
-                            <div id="file-editor" class="file-editor">
-                                <div class="editor-placeholder">
-                                    Select a project and file to start editing
+                    </div>
+                    
+                    <div class="editor-content" id="editor-content">
+                        <!-- Chat Tab Content -->
+                        <div class="tab-pane active" data-tab="chat">
+                            <div class="chat-container">
+                                <div id="messages-streaming" class="messages"></div>
+                                <div class="input-area">
+                                    <textarea id="user-input-streaming" placeholder="Ask about your project..." rows="3"></textarea>
+                                    <button id="send-btn-streaming" class="btn btn-primary">Send</button>
                                 </div>
+                                <div id="status-streaming" class="status">Select a project to start chatting</div>
                             </div>
                         </div>
                     </div>
@@ -1343,134 +1316,260 @@
                 flex-direction: column;
             }
 
-            .app-container {
+            .ide-container {
+                display: flex;
+                height: 100%;
+            }
+
+            .left-panel {
+                width: 300px;
+                background: #252525;
+                border-right: 1px solid #444;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .project-selector {
+                padding: 15px;
+                border-bottom: 1px solid #333;
+            }
+
+            .project-selector select {
+                width: 100%;
+                background: #333;
+                border: 1px solid #555;
+                color: #e0e0e0;
+                padding: 8px 12px;
+                border-radius: 4px;
+                font-family: inherit;
+                font-size: 14px;
+            }
+
+            .project-selector select:focus {
+                outline: none;
+                border-color: #0d7377;
+            }
+
+            .file-explorer {
+                flex: 1;
+                padding: 15px;
+                overflow-y: auto;
+            }
+
+            .no-project {
+                color: #666;
+                font-size: 12px;
+                text-align: center;
+                margin-top: 50px;
+            }
+
+            .file-tree {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+
+            .folder-item, .file-item {
+                padding: 6px 8px;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 12px;
+                font-family: monospace;
+                transition: background-color 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .folder-item {
+                font-weight: bold;
+                color: #ccc;
+            }
+
+            .folder-item:hover, .file-item:hover {
+                background: #333;
+            }
+
+            .folder-item.expanded {
+                color: #e0e0e0;
+            }
+
+            .file-item {
+                color: #aaa;
+                margin-left: 20px;
+            }
+
+            .file-item.active {
+                background: #0d7377;
+                color: #e0e0e0;
+            }
+
+            .folder-icon {
+                font-size: 10px;
+                transition: transform 0.2s;
+            }
+
+            .folder-item.expanded .folder-icon {
+                transform: rotate(90deg);
+            }
+
+            .right-panel {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .editor-tabs {
+                background: #2d2d2d;
+                border-bottom: 1px solid #444;
+                display: flex;
+                overflow-x: auto;
+                min-height: 40px;
+            }
+
+            .editor-tab {
+                background: #333;
+                border: none;
+                border-right: 1px solid #444;
+                color: #ccc;
+                padding: 8px 16px;
+                cursor: pointer;
+                font-family: inherit;
+                font-size: 13px;
+                white-space: nowrap;
+                position: relative;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                transition: all 0.2s;
+            }
+
+            .editor-tab:hover {
+                background: #3a3a3a;
+                color: #e0e0e0;
+            }
+
+            .editor-tab.active {
+                background: #1a1a1a;
+                color: #e0e0e0;
+            }
+
+            .editor-tab.chat-tab {
+                background: #2a4d50;
+                color: #e0e0e0;
+            }
+
+            .editor-tab.chat-tab.active {
+                background: #0d7377;
+            }
+
+            .editor-tab .close-btn {
+                background: none;
+                border: none;
+                color: #999;
+                font-size: 12px;
+                cursor: pointer;
+                padding: 2px 4px;
+                border-radius: 2px;
+                margin-left: 8px;
+            }
+
+            .editor-tab .close-btn:hover {
+                background: #555;
+                color: #fff;
+            }
+
+            .editor-tab.chat-tab .close-btn {
+                display: none;
+            }
+
+            .editor-content {
+                flex: 1;
+                overflow: hidden;
+                position: relative;
+            }
+
+            .tab-pane {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                display: none;
+                flex-direction: column;
+            }
+
+            .tab-pane.active {
+                display: flex;
+            }
+
+            .chat-container {
                 display: flex;
                 flex-direction: column;
                 height: 100%;
             }
 
-            .app-header {
-                background: #2d2d2d;
-                padding: 15px 20px;
-                border-bottom: 1px solid #444;
+            .file-editor-pane {
                 display: flex;
-                justify-content: space-between;
+                flex-direction: column;
+                height: 100%;
+            }
+
+            .file-editor-content {
+                flex: 1;
+                overflow: hidden;
+                position: relative;
+            }
+
+            .editor-textarea {
+                width: 100%;
+                height: 100%;
+                background: #1a1a1a;
+                border: none;
+                color: #e0e0e0;
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                font-size: 13px;
+                line-height: 1.4;
+                resize: none;
+                outline: none;
+                padding: 15px;
+                margin: 0;
+            }
+
+            .file-actions {
+                background: #2d2d2d;
+                border-bottom: 1px solid #444;
+                padding: 8px 15px;
+                display: flex;
+                gap: 10px;
                 align-items: center;
             }
 
-            .tabs {
-                display: flex;
-                gap: 2px;
+            .file-actions .btn {
+                padding: 4px 8px;
+                font-size: 11px;
             }
 
-            .tab-btn {
-                background: #333;
-                border: 1px solid #555;
-                color: #ccc;
-                padding: 8px 16px;
-                cursor: pointer;
-                font-family: inherit;
-                font-size: 14px;
-                border-radius: 4px 4px 0 0;
-                transition: all 0.2s;
-            }
-
-            .tab-btn:hover {
-                background: #3a3a3a;
-                color: #e0e0e0;
-            }
-
-            .tab-btn.active {
-                background: #1a1a1a;
-                color: #e0e0e0;
-                border-bottom-color: #1a1a1a;
-            }
-
-            .header-controls {
-                display: flex;
-                gap: 10px;
-            }
-
-            .tab-content {
-                display: none;
-                flex: 1;
-                overflow: hidden;
-            }
-
-            .tab-content.active {
-                display: flex;
-                flex-direction: column;
-            }
-
-            .chat-container, .projects-container {
-                display: flex;
-                flex: 1;
-                overflow: hidden;
-            }
-
-            .chat-sidebar, .projects-sidebar {
-                width: 280px;
-                background: #252525;
-                border-right: 1px solid #444;
-                overflow-y: auto;
-                display: flex;
-                flex-direction: column;
-            }
-
-            .sidebar-section {
-                padding: 15px;
-                border-bottom: 1px solid #333;
-            }
-
-            .sidebar-section:last-child {
-                border-bottom: none;
-                flex: 1;
-            }
-
-            .sidebar-section h3 {
-                margin: 0 0 10px 0;
-                font-size: 14px;
-                font-weight: normal;
-                color: #ccc;
-            }
-
-            .btn-small {
-                padding: 6px 12px;
-                font-size: 12px;
-                margin-bottom: 10px;
-                width: 100%;
-            }
-
-            .chat-list {
-                display: flex;
-                flex-direction: column;
-                gap: 5px;
-            }
-
-            .chat-item {
-                padding: 8px 12px;
-                background: #333;
-                border: 1px solid #444;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-                transition: background-color 0.2s;
-            }
-
-            .chat-item:hover {
-                background: #3a3a3a;
-            }
-
-            .chat-item.active {
+            .new-file-btn {
+                position: absolute;
+                top: 10px;
+                right: 10px;
                 background: #0d7377;
-                border-color: #14a085;
+                border: none;
+                color: white;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                cursor: pointer;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
 
-            .main-chat {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
+            .new-file-btn:hover {
+                background: #0a5d61;
             }
 
             .messages {
@@ -1839,7 +1938,6 @@
         constructor() {
             Logger.log('App', 'Initializing Streaming Chat App');
             this.apiManager = new StreamingAPIManager();
-            this.chatManager = new ChatManager();
             this.fileSystem = new FileSystemManager();
             this.projectManager = new ProjectManager();
             this.toolManager = new ToolManager(this.fileSystem, this.projectManager);
@@ -1850,6 +1948,12 @@
             this.heartbeatTimer = null;
             this.currentStreamingMessage = null;
             this.pendingToolExecutions = [];
+            
+            // IDE state
+            this.currentProject = null;
+            this.openTabs = new Map(); // tabId -> {type, projectId, filePath, content, isDirty}
+            this.activeTab = 'chat';
+            this.projectChats = new Map(); // projectId -> {messages: [], conversationId: null}
         }
 
         async init() {
@@ -1878,51 +1982,28 @@
 
         bindElements() {
             this.elements = {
-                // Tab elements
-                chatTab: document.getElementById('chat-tab'),
-                projectsTab: document.getElementById('projects-tab'),
-                chatContent: document.getElementById('chat-content'),
-                projectsContent: document.getElementById('projects-content'),
-                
-                // Chat elements
-                newChatBtn: document.getElementById('new-chat-streaming'),
-                closeBtn: document.getElementById('close-overlay-streaming'),
-                chatList: document.getElementById('chat-list-streaming'),
+                projectDropdown: document.getElementById('project-dropdown'),
+                fileExplorer: document.getElementById('file-explorer'),
+                editorTabs: document.getElementById('editor-tabs'),
+                editorContent: document.getElementById('editor-content'),
                 messages: document.getElementById('messages-streaming'),
                 userInput: document.getElementById('user-input-streaming'),
                 sendBtn: document.getElementById('send-btn-streaming'),
-                status: document.getElementById('status-streaming'),
-                activeProjectsList: document.getElementById('active-projects-list'),
-                
-                // Project elements
-                newProjectBtn: document.getElementById('new-project-btn'),
-                projectsList: document.getElementById('projects-list'),
-                fileTreeSection: document.getElementById('file-tree-section'),
-                fileTree: document.getElementById('file-tree'),
-                newFileBtn: document.getElementById('new-file-btn'),
-                fileEditor: document.getElementById('file-editor')
+                status: document.getElementById('status-streaming')
             };
         }
 
         bindEvents() {
-            // Tab switching
-            this.elements.chatTab.addEventListener('click', () => {
-                this.switchTab('chat');
-            });
-            
-            this.elements.projectsTab.addEventListener('click', () => {
-                this.switchTab('projects');
+            // Project dropdown
+            this.elements.projectDropdown.addEventListener('change', (e) => {
+                if (e.target.value === '__new__') {
+                    this.createNewProject();
+                } else if (e.target.value) {
+                    this.selectProject(e.target.value);
+                }
             });
 
             // Chat events
-            this.elements.newChatBtn.addEventListener('click', () => {
-                this.createNewChat();
-            });
-
-            this.elements.closeBtn.addEventListener('click', () => {
-                this.close();
-            });
-
             this.elements.sendBtn.addEventListener('click', () => {
                 this.sendMessage();
             });
@@ -1934,46 +2015,157 @@
                 }
             });
 
-            // Project events
-            this.elements.newProjectBtn.addEventListener('click', () => {
-                this.createNewProject();
+            // Tab switching
+            this.elements.editorTabs.addEventListener('click', (e) => {
+                const tab = e.target.closest('.editor-tab');
+                if (tab) {
+                    const tabId = tab.dataset.tab;
+                    if (tabId) {
+                        this.switchToTab(tabId);
+                    }
+                }
+                
+                const closeBtn = e.target.closest('.close-btn');
+                if (closeBtn) {
+                    e.stopPropagation();
+                    const tab = closeBtn.closest('.editor-tab');
+                    const tabId = tab.dataset.tab;
+                    this.closeTab(tabId);
+                }
             });
 
-            this.elements.newFileBtn.addEventListener('click', () => {
-                this.createNewFile();
+            // Global shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    if (e.key === 's') {
+                        e.preventDefault();
+                        this.saveCurrentFile();
+                    } else if (e.key === 'w') {
+                        e.preventDefault();
+                        if (this.activeTab !== 'chat') {
+                            this.closeTab(this.activeTab);
+                        }
+                    }
+                }
             });
-        }
-
-        switchTab(tabName) {
-            // Update tab buttons
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            
-            if (tabName === 'chat') {
-                this.elements.chatTab.classList.add('active');
-                this.elements.chatContent.classList.add('active');
-            } else if (tabName === 'projects') {
-                this.elements.projectsTab.classList.add('active');
-                this.elements.projectsContent.classList.add('active');
-                this.updateProjectsUI();
-            }
-        }
-
-        createNewChat() {
-            this.chatManager.createNewChat();
-            this.updateUI();
-            this.elements.userInput.focus();
-        }
-
-        selectChat(chatId) {
-            this.chatManager.selectChat(chatId);
-            this.updateUI();
         }
 
         updateUI() {
-            this.updateChatList();
+            this.updateProjectDropdown();
+            this.updateFileExplorer();
+            this.updateEditorTabs();
             this.updateMessages();
-            this.updateActiveProjects();
+        }
+
+        updateProjectDropdown() {
+            const dropdown = this.elements.projectDropdown;
+            const projects = this.projectManager.listProjects();
+            
+            // Clear existing options except first two
+            while (dropdown.children.length > 2) {
+                dropdown.removeChild(dropdown.lastChild);
+            }
+            
+            projects.forEach(project => {
+                const option = document.createElement('option');
+                option.value = project.id;
+                option.textContent = project.name;
+                if (project.id === this.currentProject) {
+                    option.selected = true;
+                }
+                dropdown.appendChild(option);
+            });
+        }
+
+        selectProject(projectId) {
+            this.currentProject = projectId;
+            this.toolManager.setActiveProjects([projectId]);
+            
+            // Initialize project chat if needed
+            if (!this.projectChats.has(projectId)) {
+                this.projectChats.set(projectId, {
+                    messages: [],
+                    conversationId: null
+                });
+            }
+            
+            this.updateUI();
+            this.switchToTab('chat');
+            this.updateStatus('Project selected - Ready to chat', 'ready');
+        }
+
+        updateFileExplorer() {
+            const explorer = this.elements.fileExplorer;
+            
+            if (!this.currentProject) {
+                explorer.innerHTML = '<div class="no-project">Select a project to view files</div><button class="new-file-btn" onclick="window.aiChatOverlayStreaming.createNewProject()" title="Create Project">+</button>';
+                return;
+            }
+            
+            const files = this.fileSystem.listFiles(this.currentProject);
+            const fileTree = this.buildFileTree(files);
+            
+            explorer.innerHTML = '<button class="new-file-btn" onclick="window.aiChatOverlayStreaming.createNewFile()" title="New File">+</button>';
+            const treeElement = this.renderFileTree(fileTree);
+            explorer.appendChild(treeElement);
+        }
+
+        buildFileTree(files) {
+            const tree = {};
+            
+            files.forEach(filePath => {
+                const parts = filePath.split('/').filter(p => p);
+                let current = tree;
+                
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    const isFile = i === parts.length - 1;
+                    
+                    if (!current[part]) {
+                        current[part] = isFile ? { __isFile: true, path: filePath } : {};
+                    }
+                    current = current[part];
+                }
+            });
+            
+            return tree;
+        }
+
+        renderFileTree(tree, parentPath = '') {
+            const container = document.createElement('div');
+            container.className = 'file-tree';
+            
+            Object.keys(tree).sort().forEach(name => {
+                const item = tree[name];
+                
+                if (item.__isFile) {
+                    const fileEl = document.createElement('div');
+                    fileEl.className = 'file-item';
+                    fileEl.textContent = name;
+                    fileEl.addEventListener('click', () => {
+                        this.openFile(item.path);
+                    });
+                    container.appendChild(fileEl);
+                } else {
+                    const folderEl = document.createElement('div');
+                    folderEl.className = 'folder-item';
+                    folderEl.innerHTML = `<span class="folder-icon">▶</span>${name}`;
+                    
+                    const childContainer = this.renderFileTree(item, parentPath + name + '/');
+                    childContainer.style.display = 'none';
+                    
+                    folderEl.addEventListener('click', () => {
+                        const isExpanded = folderEl.classList.contains('expanded');
+                        folderEl.classList.toggle('expanded');
+                        childContainer.style.display = isExpanded ? 'none' : 'block';
+                    });
+                    
+                    container.appendChild(folderEl);
+                    container.appendChild(childContainer);
+                }
+            });
+            
+            return container;
         }
 
         updateActiveProjects() {
