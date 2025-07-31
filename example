@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 06:29:50 PM UTC 2025
+// Generated on Thu Jul 31 06:38:33 PM UTC 2025
 
 // ===== api-manager.js =====
 (function() {
@@ -207,8 +207,7 @@
                     conversationId: responseData.id,
                     userId: responseData.user_id,
                     userMessageId: payload.chat.messages[payload.chat.messages.length - 1].id,
-                    payload: payload,
-                    conversationObject: responseData  // Save the full conversation object from Step 1
+                    payload: payload
                 };
 
             } catch (error) {
@@ -218,90 +217,93 @@
             }
         }
 
-        addAssistantMessageToConversation(conversationObject, newUserMessage) {
-            this.logger.log('StreamingAPI', 'Adding user and assistant messages locally');
+        async step2AddAssistantMessage(conversationId) {
+            this.logger.log('StreamingAPI', 'STEP 2: Adding assistant message slot');
 
-            // Add the new user message if provided
-            if (newUserMessage) {
-                const userMessageId = this.utils.generateUUID();
+            try {
+                // Step 2a: Get current conversation state
+                const getUrl = `${this.config.GET_CHAT_ENDPOINT}${conversationId}`;
+                this.logger.log('StreamingAPI', 'Step 2a: Getting conversation', { url: getUrl });
+
+                const getResponse = await fetch(getUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${this.token}`
+                    }
+                });
+
+                if (!getResponse.ok) {
+                    throw new Error(`Step 2a failed: ${getResponse.status} ${getResponse.statusText}`);
+                }
+
+                const conversationData = await getResponse.json();
+                this.logger.log('StreamingAPI', 'Step 2a successful', { 
+                    messagesCount: conversationData.chat.messages.length 
+                });
+
+                // Step 2b: Add empty assistant message
+                const assistantMessageId = this.utils.generateUUID();
                 const timestamp10 = this.utils.get10DigitTimestamp();
 
-                // Find the last message to set as parent
-                const lastMessage = conversationObject.chat.messages[conversationObject.chat.messages.length - 1];
+                // Find the last user message to set as parent
+                const userMessages = conversationData.chat.messages.filter(m => m.role === 'user');
+                const lastUserMessage = userMessages[userMessages.length - 1];
 
-                const userMessage = {
+                const assistantMessage = {
                     childrenIds: [],
-                    content: newUserMessage,
-                    id: userMessageId,
+                    content: "",
+                    id: assistantMessageId,
                     models: ["Anthropic Claude 4 Sonnet"],
-                    parentId: lastMessage ? lastMessage.id : null,
-                    role: "user",
+                    parentId: lastUserMessage ? lastUserMessage.id : null,
+                    role: "assistant",
                     timestamp: timestamp10
                 };
 
                 // Update parent's childrenIds
-                if (lastMessage) {
-                    const parentInMessages = conversationObject.chat.messages.find(m => m.id === lastMessage.id);
+                if (lastUserMessage) {
+                    const parentInMessages = conversationData.chat.messages.find(m => m.id === lastUserMessage.id);
                     if (parentInMessages) {
-                        parentInMessages.childrenIds.push(userMessageId);
+                        parentInMessages.childrenIds.push(assistantMessageId);
                     }
 
-                    const parentInHistory = conversationObject.chat.history.messages[lastMessage.id];
+                    const parentInHistory = conversationData.chat.history.messages[lastUserMessage.id];
                     if (parentInHistory) {
-                        parentInHistory.childrenIds.push(userMessageId);
+                        parentInHistory.childrenIds.push(assistantMessageId);
                     }
                 }
 
                 // Add to messages array
-                conversationObject.chat.messages.push(userMessage);
+                conversationData.chat.messages.push(assistantMessage);
 
                 // Add to history
-                conversationObject.chat.history.messages[userMessageId] = userMessage;
-                conversationObject.chat.history.currentId = userMessageId;
+                conversationData.chat.history.messages[assistantMessageId] = assistantMessage;
+                conversationData.chat.history.currentId = assistantMessageId;
 
-                this.logger.log('StreamingAPI', 'Added user message', { userMessageId });
-            }
+                this.logger.log('StreamingAPI', 'Step 2b: Posting updated conversation');
 
-            // Add empty assistant message
-            const assistantMessageId = this.utils.generateUUID();
-            const timestamp10 = this.utils.get10DigitTimestamp();
+                const postResponse = await fetch(`${this.config.GET_CHAT_ENDPOINT}${conversationId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.token}`
+                    },
+                    body: JSON.stringify(conversationData)
+                });
 
-            // Find the last message (should be user message now)
-            const lastMessage = conversationObject.chat.messages[conversationObject.chat.messages.length - 1];
-
-            const assistantMessage = {
-                childrenIds: [],
-                content: "",
-                id: assistantMessageId,
-                models: ["Anthropic Claude 4 Sonnet"],
-                parentId: lastMessage ? lastMessage.id : null,
-                role: "assistant",
-                timestamp: timestamp10
-            };
-
-            // Update parent's childrenIds
-            if (lastMessage) {
-                const parentInMessages = conversationObject.chat.messages.find(m => m.id === lastMessage.id);
-                if (parentInMessages) {
-                    parentInMessages.childrenIds.push(assistantMessageId);
+                if (!postResponse.ok) {
+                    throw new Error(`Step 2b failed: ${postResponse.status} ${postResponse.statusText}`);
                 }
 
-                const parentInHistory = conversationObject.chat.history.messages[lastMessage.id];
-                if (parentInHistory) {
-                    parentInHistory.childrenIds.push(assistantMessageId);
-                }
+                this.logger.log('StreamingAPI', 'Step 2 successful', { 
+                    assistantMessageId 
+                });
+
+                return { assistantMessageId };
+
+            } catch (error) {
+                this.logger.error('StreamingAPI', 'Step 2 failed', error);
+                throw error;
             }
-
-            // Add to messages array
-            conversationObject.chat.messages.push(assistantMessage);
-
-            // Add to history
-            conversationObject.chat.history.messages[assistantMessageId] = assistantMessage;
-            conversationObject.chat.history.currentId = assistantMessageId;
-
-            this.logger.log('StreamingAPI', 'Added assistant message slot', { assistantMessageId });
-
-            return { assistantMessageId, conversationObject };
         }
 
         async step3StreamCompletions(conversationId, assistantMessageId, messages, onChunk, onComplete, onError, onProgress) {
@@ -415,68 +417,28 @@
         }
 
         async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk = null, onComplete = null, onError = null, onProgress = null) {
-            this.logger.log('StreamingAPI', 'Starting optimized 2-step flow', { 
+            this.logger.log('StreamingAPI', 'Starting 3-step flow', { 
                 hasExistingConversation: !!existingConversationId,
                 historyLength: conversationHistory.length
             });
 
             try {
                 let conversationId = existingConversationId;
-                let conversationObject = null;
-                let assistantMessageId = null;
+                let messages = [...conversationHistory, { role: 'user', content: userMessage }];
 
+                // Step 1: Create conversation (only if new)
                 if (!conversationId) {
-                    // Step 1: Create conversation with history + current user message
                     const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
                     conversationId = step1Result.conversationId;
-                    conversationObject = step1Result.conversationObject;
-
-                    // Add assistant slot locally (no API call needed)
-                    const result = this.addAssistantMessageToConversation(conversationObject, null); // null = don't add user message, just assistant
-                    assistantMessageId = result.assistantMessageId;
-                    conversationObject = result.conversationObject;
-                } else {
-                    // For existing conversations, we need to get current state and add messages
-                    this.logger.log('StreamingAPI', 'Getting existing conversation for continuation');
-                    const getUrl = `${this.config.GET_CHAT_ENDPOINT}${conversationId}`;
-                    
-                    const getResponse = await fetch(getUrl, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${this.token}`
-                        }
-                    });
-
-                    if (!getResponse.ok) {
-                        throw new Error(`Failed to get existing conversation: ${getResponse.status} ${getResponse.statusText}`);
-                    }
-
-                    conversationObject = await getResponse.json();
-                    
-                    // Add user message + assistant slot locally
-                    const result = this.addAssistantMessageToConversation(conversationObject, userMessage);
-                    assistantMessageId = result.assistantMessageId;
-                    conversationObject = result.conversationObject;
                 }
 
-                // Step 2: Stream completions using the modified conversation object
-                // Include all user messages and assistant messages with content (exclude only empty assistant messages)
-                const messages = conversationObject.chat.messages
-                    .filter(m => {
-                        if (m.role === 'user') return true; // Always include user messages
-                        if (m.role === 'assistant') return m.content && m.content.trim(); // Only include assistant messages with actual content
-                        return false; // Exclude any other roles
-                    })
-                    .map(m => ({ role: m.role, content: m.content }));
+                // Step 2: Add assistant message slot
+                const step2Result = await this.step2AddAssistantMessage(conversationId);
 
-                this.logger.log('StreamingAPI', 'Messages being sent to completions', {
-                    totalMessages: messages.length,
-                    messageBreakdown: messages.map(m => ({ role: m.role, contentLength: m.content.length }))
-                });
-
+                // Step 3: Stream completions
                 await this.step3StreamCompletions(
                     conversationId,
-                    assistantMessageId,
+                    step2Result.assistantMessageId,
                     messages,
                     onChunk,
                     onComplete,
@@ -487,7 +449,7 @@
                 return { conversationId };
 
             } catch (error) {
-                this.logger.error('StreamingAPI', 'Optimized flow failed', error);
+                this.logger.error('StreamingAPI', '3-step flow failed', error);
                 if (onError) onError(error);
                 throw error;
             }
