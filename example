@@ -1,5 +1,1315 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 08:13:11 PM UTC 2025
+// Generated on Thu Jul 31 08:45:33 PM UTC 2025
+
+// ===== editor.js =====
+(function() {
+    'use strict';
+    
+    class CodeEditor {
+        constructor(container, options = {}) {
+            this.container = container;
+            this.options = {
+                readOnly: false,
+                tabSize: 4,
+                ...options
+            };
+            
+            this.plugins = new Map();
+            this.currentPlugin = null;
+            this.content = '';
+            
+            this.init();
+        }
+        
+        init() {
+            this.createElements();
+            this.setupEventListeners();
+        }
+        
+        createElements() {
+            // Create wrapper
+            this.wrapper = document.createElement('div');
+            this.wrapper.className = 'code-editor';
+            this.wrapper.style.cssText = `
+                position: relative;
+                width: 100%;
+                height: 100%;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                line-height: 1.4;
+                border: 1px solid #ccc;
+                background: #fff;
+            `;
+            
+            // Create highlighted code display
+            this.highlightLayer = document.createElement('div');
+            this.highlightLayer.className = 'code-highlight-layer';
+            this.highlightLayer.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                padding: 8px;
+                margin: 0;
+                border: none;
+                outline: none;
+                resize: none;
+                white-space: pre;
+                overflow: auto;
+                pointer-events: none;
+                z-index: 1;
+                color: transparent;
+                background: transparent;
+            `;
+            
+            // Create text input textarea
+            this.textarea = document.createElement('textarea');
+            this.textarea.className = 'code-input-layer';
+            this.textarea.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                padding: 8px;
+                margin: 0;
+                border: none;
+                outline: none;
+                resize: none;
+                font-family: inherit;
+                font-size: inherit;
+                line-height: inherit;
+                white-space: pre;
+                overflow: auto;
+                background: transparent;
+                color: transparent;
+                caret-color: black;
+                z-index: 2;
+            `;
+            
+            this.wrapper.appendChild(this.highlightLayer);
+            this.wrapper.appendChild(this.textarea);
+            this.container.appendChild(this.wrapper);
+        }
+        
+        setupEventListeners() {
+            this.textarea.addEventListener('input', () => {
+                this.content = this.textarea.value;
+                this.updateHighlighting();
+            });
+            
+            this.textarea.addEventListener('scroll', () => {
+                this.highlightLayer.scrollTop = this.textarea.scrollTop;
+                this.highlightLayer.scrollLeft = this.textarea.scrollLeft;
+            });
+            
+            // Handle tab key
+            this.textarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = this.textarea.selectionStart;
+                    const end = this.textarea.selectionEnd;
+                    const tabSpaces = ' '.repeat(this.options.tabSize);
+                    
+                    this.textarea.value = 
+                        this.textarea.value.substring(0, start) + 
+                        tabSpaces + 
+                        this.textarea.value.substring(end);
+                    
+                    this.textarea.selectionStart = this.textarea.selectionEnd = start + tabSpaces.length;
+                    this.content = this.textarea.value;
+                    this.updateHighlighting();
+                }
+            });
+        }
+        
+        registerPlugin(name, plugin) {
+            if (!plugin || typeof plugin.highlight !== 'function') {
+                throw new Error('Plugin must have a highlight method');
+            }
+            this.plugins.set(name, plugin);
+        }
+        
+        setLanguage(pluginName) {
+            if (!this.plugins.has(pluginName)) {
+                throw new Error(`Plugin '${pluginName}' not found`);
+            }
+            this.currentPlugin = this.plugins.get(pluginName);
+            this.updateHighlighting();
+        }
+        
+        updateHighlighting() {
+            if (!this.currentPlugin) {
+                this.highlightLayer.innerHTML = this.escapeHtml(this.content);
+                return;
+            }
+            
+            try {
+                const highlighted = this.currentPlugin.highlight(this.content);
+                this.highlightLayer.innerHTML = highlighted;
+            } catch (error) {
+                console.error('Highlighting failed:', error);
+                this.highlightLayer.innerHTML = this.escapeHtml(this.content);
+            }
+        }
+        
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        setValue(content) {
+            this.content = content;
+            this.textarea.value = content;
+            this.updateHighlighting();
+        }
+        
+        getValue() {
+            return this.content;
+        }
+        
+        focus() {
+            this.textarea.focus();
+        }
+        
+        setReadOnly(readOnly) {
+            this.options.readOnly = readOnly;
+            this.textarea.readOnly = readOnly;
+        }
+    }
+    
+    // Export to window
+    window.CodeEditor = CodeEditor;
+})();
+
+// ===== plugin-interface.js =====
+(function() {
+    'use strict';
+    
+    /**
+     * Base plugin interface for code editor syntax highlighting
+     */
+    class EditorPlugin {
+        constructor(name) {
+            this.name = name;
+        }
+        
+        /**
+         * Highlight the given source code and return HTML with syntax highlighting
+         * @param {string} sourceCode - The source code to highlight
+         * @returns {string} HTML string with syntax highlighting
+         */
+        highlight(sourceCode) {
+            throw new Error('Plugin must implement highlight method');
+        }
+        
+        /**
+         * Get supported file extensions for this plugin
+         * @returns {string[]} Array of file extensions (e.g., ['.java', '.class'])
+         */
+        getSupportedExtensions() {
+            return [];
+        }
+        
+        /**
+         * Get the display name for this language
+         * @returns {string} Display name
+         */
+        getDisplayName() {
+            return this.name;
+        }
+        
+        /**
+         * Optional: Initialize the plugin with editor instance
+         * @param {CodeEditor} editor - The editor instance
+         */
+        initialize(editor) {
+            // Override if needed
+        }
+        
+        /**
+         * Optional: Cleanup when plugin is removed
+         */
+        destroy() {
+            // Override if needed
+        }
+    }
+    
+    // Export to window
+    window.EditorPlugin = EditorPlugin;
+})();
+
+// ===== java-ast.js =====
+(function() {
+    'use strict';
+    
+    // Base AST Node
+    class ASTNode {
+        constructor(type) {
+            this.type = type;
+        }
+        
+        toString() {
+            return JSON.stringify(this, null, 2);
+        }
+    }
+    
+    // Program (root node)
+    class Program extends ASTNode {
+        constructor(classes = []) {
+            super('Program');
+            this.classes = classes;
+        }
+    }
+    
+    // Class Declaration
+    class ClassDeclaration extends ASTNode {
+        constructor(name, modifiers = [], methods = []) {
+            super('ClassDeclaration');
+            this.name = name;
+            this.modifiers = modifiers;
+            this.methods = methods;
+        }
+    }
+    
+    // Method Declaration
+    class MethodDeclaration extends ASTNode {
+        constructor(name, returnType, parameters = [], modifiers = [], body = null) {
+            super('MethodDeclaration');
+            this.name = name;
+            this.returnType = returnType;
+            this.parameters = parameters;
+            this.modifiers = modifiers;
+            this.body = body;
+        }
+    }
+    
+    // Parameter
+    class Parameter extends ASTNode {
+        constructor(paramType, name) {
+            super('Parameter');
+            this.paramType = paramType;
+            this.name = name;
+        }
+    }
+    
+    // Block Statement
+    class BlockStatement extends ASTNode {
+        constructor(statements = []) {
+            super('BlockStatement');
+            this.statements = statements;
+        }
+    }
+    
+    // Variable Declaration
+    class VariableDeclaration extends ASTNode {
+        constructor(varType, name, initializer = null) {
+            super('VariableDeclaration');
+            this.varType = varType;
+            this.name = name;
+            this.initializer = initializer;
+        }
+    }
+    
+    // Assignment Expression
+    class AssignmentExpression extends ASTNode {
+        constructor(left, right) {
+            super('AssignmentExpression');
+            this.left = left;
+            this.right = right;
+        }
+    }
+    
+    // Binary Expression
+    class BinaryExpression extends ASTNode {
+        constructor(left, operator, right) {
+            super('BinaryExpression');
+            this.left = left;
+            this.operator = operator;
+            this.right = right;
+        }
+    }
+    
+    // Identifier
+    class Identifier extends ASTNode {
+        constructor(name) {
+            super('Identifier');
+            this.name = name;
+        }
+    }
+    
+    // Literal
+    class Literal extends ASTNode {
+        constructor(value, literalType) {
+            super('Literal');
+            this.value = value;
+            this.literalType = literalType; // 'string', 'number'
+        }
+    }
+    
+    // Return Statement
+    class ReturnStatement extends ASTNode {
+        constructor(argument = null) {
+            super('ReturnStatement');
+            this.argument = argument;
+        }
+    }
+    
+    // If Statement
+    class IfStatement extends ASTNode {
+        constructor(condition, thenStatement, elseStatement = null) {
+            super('IfStatement');
+            this.condition = condition;
+            this.thenStatement = thenStatement;
+            this.elseStatement = elseStatement;
+        }
+    }
+    
+    // While Statement
+    class WhileStatement extends ASTNode {
+        constructor(condition, body) {
+            super('WhileStatement');
+            this.condition = condition;
+            this.body = body;
+        }
+    }
+    
+    // Expression Statement
+    class ExpressionStatement extends ASTNode {
+        constructor(expression) {
+            super('ExpressionStatement');
+            this.expression = expression;
+        }
+    }
+    
+    // Method Call Expression
+    class MethodCallExpression extends ASTNode {
+        constructor(object, method, args = []) {
+            super('MethodCallExpression');
+            this.object = object;
+            this.method = method;
+            this.arguments = args;
+        }
+    }
+    
+    // Export to window
+    window.JavaAST = {
+        ASTNode,
+        Program,
+        ClassDeclaration,
+        MethodDeclaration,
+        Parameter,
+        BlockStatement,
+        VariableDeclaration,
+        AssignmentExpression,
+        BinaryExpression,
+        Identifier,
+        Literal,
+        ReturnStatement,
+        IfStatement,
+        WhileStatement,
+        ExpressionStatement,
+        MethodCallExpression
+    };
+})();
+
+// ===== java-lexer.js =====
+(function() {
+    'use strict';
+    
+    const TokenType = {
+        // Literals
+        IDENTIFIER: 'IDENTIFIER',
+        STRING_LITERAL: 'STRING_LITERAL',
+        NUMBER_LITERAL: 'NUMBER_LITERAL',
+        
+        // Keywords
+        CLASS: 'CLASS',
+        PUBLIC: 'PUBLIC',
+        PRIVATE: 'PRIVATE',
+        STATIC: 'STATIC',
+        VOID: 'VOID',
+        INT: 'INT',
+        STRING: 'STRING',
+        IF: 'IF',
+        ELSE: 'ELSE',
+        WHILE: 'WHILE',
+        FOR: 'FOR',
+        RETURN: 'RETURN',
+        
+        // Operators
+        PLUS: 'PLUS',
+        MINUS: 'MINUS',
+        MULTIPLY: 'MULTIPLY',
+        DIVIDE: 'DIVIDE',
+        ASSIGN: 'ASSIGN',
+        EQUALS: 'EQUALS',
+        NOT_EQUALS: 'NOT_EQUALS',
+        LESS_THAN: 'LESS_THAN',
+        GREATER_THAN: 'GREATER_THAN',
+        
+        // Delimiters
+        LEFT_PAREN: 'LEFT_PAREN',
+        RIGHT_PAREN: 'RIGHT_PAREN',
+        LEFT_BRACE: 'LEFT_BRACE',
+        RIGHT_BRACE: 'RIGHT_BRACE',
+        SEMICOLON: 'SEMICOLON',
+        COMMA: 'COMMA',
+        DOT: 'DOT',
+        
+        // Special
+        EOF: 'EOF',
+        NEWLINE: 'NEWLINE',
+        WHITESPACE: 'WHITESPACE'
+    };
+    
+    class Token {
+        constructor(type, value, line, column) {
+            this.type = type;
+            this.value = value;
+            this.line = line;
+            this.column = column;
+        }
+        
+        toString() {
+            return `Token(${this.type}, '${this.value}', ${this.line}:${this.column})`;
+        }
+    }
+    
+    class Lexer {
+        constructor(input) {
+            this.input = input;
+            this.position = 0;
+            this.line = 1;
+            this.column = 1;
+            this.tokens = [];
+            
+            this.keywords = {
+                'class': TokenType.CLASS,
+                'public': TokenType.PUBLIC,
+                'private': TokenType.PRIVATE,
+                'static': TokenType.STATIC,
+                'void': TokenType.VOID,
+                'int': TokenType.INT,
+                'String': TokenType.STRING,
+                'if': TokenType.IF,
+                'else': TokenType.ELSE,
+                'while': TokenType.WHILE,
+                'for': TokenType.FOR,
+                'return': TokenType.RETURN
+            };
+        }
+        
+        peek(offset = 0) {
+            const pos = this.position + offset;
+            return pos < this.input.length ? this.input[pos] : '\0';
+        }
+        
+        advance() {
+            if (this.position < this.input.length) {
+                const char = this.input[this.position];
+                this.position++;
+                if (char === '\n') {
+                    this.line++;
+                    this.column = 1;
+                } else {
+                    this.column++;
+                }
+                return char;
+            }
+            return '\0';
+        }
+        
+        addToken(type, value = null) {
+            this.tokens.push(new Token(type, value, this.line, this.column));
+        }
+        
+        isAlpha(char) {
+            return /[a-zA-Z_$]/.test(char);
+        }
+        
+        isAlphaNumeric(char) {
+            return /[a-zA-Z0-9_$]/.test(char);
+        }
+        
+        isDigit(char) {
+            return /[0-9]/.test(char);
+        }
+        
+        isWhitespace(char) {
+            return /[ \t\r]/.test(char);
+        }
+        
+        scanString() {
+            const startLine = this.line;
+            const startColumn = this.column;
+            let value = '';
+            
+            // Skip opening quote
+            this.advance();
+            
+            while (this.peek() !== '"' && this.peek() !== '\0') {
+                if (this.peek() === '\\') {
+                    // Handle escape sequences
+                    this.advance(); // consume backslash
+                    const escaped = this.peek();
+                    switch (escaped) {
+                        case 'n':
+                            value += '\n';
+                            break;
+                        case 't':
+                            value += '\t';
+                            break;
+                        case 'r':
+                            value += '\r';
+                            break;
+                        case '\\':
+                            value += '\\';
+                            break;
+                        case '"':
+                            value += '"';
+                            break;
+                        default:
+                            value += escaped;
+                    }
+                    this.advance();
+                } else {
+                    value += this.advance();
+                }
+            }
+            
+            if (this.peek() === '\0') {
+                throw new Error(`Unterminated string at line ${startLine}, column ${startColumn}`);
+            }
+            
+            // Skip closing quote
+            this.advance();
+            
+            this.tokens.push(new Token(TokenType.STRING_LITERAL, value, startLine, startColumn));
+        }
+        
+        scanNumber() {
+            const startColumn = this.column;
+            let value = '';
+            
+            while (this.isDigit(this.peek())) {
+                value += this.advance();
+            }
+            
+            // Handle decimal point
+            if (this.peek() === '.' && this.isDigit(this.peek(1))) {
+                value += this.advance(); // consume '.'
+                while (this.isDigit(this.peek())) {
+                    value += this.advance();
+                }
+            }
+            
+            this.tokens.push(new Token(TokenType.NUMBER_LITERAL, value, this.line, startColumn));
+        }
+        
+        scanIdentifier() {
+            const startColumn = this.column;
+            let value = '';
+            
+            while (this.isAlphaNumeric(this.peek())) {
+                value += this.advance();
+            }
+            
+            const tokenType = this.keywords[value] || TokenType.IDENTIFIER;
+            this.tokens.push(new Token(tokenType, value, this.line, startColumn));
+        }
+        
+        scanToken() {
+            const char = this.advance();
+            
+            switch (char) {
+                case ' ':
+                case '\t':
+                case '\r':
+                    // Skip whitespace
+                    break;
+                case '\n':
+                    this.addToken(TokenType.NEWLINE);
+                    break;
+                case '(':
+                    this.addToken(TokenType.LEFT_PAREN);
+                    break;
+                case ')':
+                    this.addToken(TokenType.RIGHT_PAREN);
+                    break;
+                case '{':
+                    this.addToken(TokenType.LEFT_BRACE);
+                    break;
+                case '}':
+                    this.addToken(TokenType.RIGHT_BRACE);
+                    break;
+                case ';':
+                    this.addToken(TokenType.SEMICOLON);
+                    break;
+                case ',':
+                    this.addToken(TokenType.COMMA);
+                    break;
+                case '.':
+                    this.addToken(TokenType.DOT);
+                    break;
+                case '+':
+                    this.addToken(TokenType.PLUS, '+');
+                    break;
+                case '-':
+                    this.addToken(TokenType.MINUS, '-');
+                    break;
+                case '*':
+                    this.addToken(TokenType.MULTIPLY, '*');
+                    break;
+                case '/':
+                    if (this.peek() === '/') {
+                        // Line comment - skip to end of line
+                        while (this.peek() !== '\n' && this.peek() !== '\0') {
+                            this.advance();
+                        }
+                    } else if (this.peek() === '*') {
+                        // Block comment
+                        this.advance(); // consume '*'
+                        while (!(this.peek() === '*' && this.peek(1) === '/') && this.peek() !== '\0') {
+                            this.advance();
+                        }
+                        if (this.peek() !== '\0') {
+                            this.advance(); // consume '*'
+                            this.advance(); // consume '/'
+                        }
+                    } else {
+                        this.addToken(TokenType.DIVIDE, '/');
+                    }
+                    break;
+                case '=':
+                    if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.EQUALS, '==');
+                    } else {
+                        this.addToken(TokenType.ASSIGN, '=');
+                    }
+                    break;
+                case '!':
+                    if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.NOT_EQUALS, '!=');
+                    }
+                    break;
+                case '<':
+                    this.addToken(TokenType.LESS_THAN, '<');
+                    break;
+                case '>':
+                    this.addToken(TokenType.GREATER_THAN, '>');
+                    break;
+                case '"':
+                    // Put the quote back and scan string
+                    this.position--;
+                    this.column--;
+                    this.scanString();
+                    break;
+                default:
+                    if (this.isDigit(char)) {
+                        // Put the digit back and scan number
+                        this.position--;
+                        this.column--;
+                        this.scanNumber();
+                    } else if (this.isAlpha(char)) {
+                        // Put the character back and scan identifier
+                        this.position--;
+                        this.column--;
+                        this.scanIdentifier();
+                    } else {
+                        throw new Error(`Unexpected character '${char}' at line ${this.line}, column ${this.column}`);
+                    }
+                    break;
+            }
+        }
+        
+        tokenize() {
+            while (this.position < this.input.length) {
+                this.scanToken();
+            }
+            
+            this.addToken(TokenType.EOF);
+            return this.tokens;
+        }
+    }
+    
+    // Export to window
+    window.JavaLexer = {
+        TokenType,
+        Token,
+        Lexer
+    };
+})();
+
+// ===== java-parser.js =====
+(function() {
+    'use strict';
+    
+    class ParseError extends Error {
+        constructor(message, token) {
+            super(message);
+            this.name = 'ParseError';
+            this.token = token;
+        }
+    }
+    
+    class Parser {
+        constructor(tokens) {
+            this.tokens = tokens.filter(token => 
+                token.type !== window.JavaLexer.TokenType.WHITESPACE &&
+                token.type !== window.JavaLexer.TokenType.NEWLINE
+            );
+            this.current = 0;
+        }
+        
+        peek() {
+            return this.tokens[this.current];
+        }
+        
+        previous() {
+            return this.tokens[this.current - 1];
+        }
+        
+        isAtEnd() {
+            return this.peek().type === window.JavaLexer.TokenType.EOF;
+        }
+        
+        advance() {
+            if (!this.isAtEnd()) this.current++;
+            return this.previous();
+        }
+        
+        check(type) {
+            if (this.isAtEnd()) return false;
+            return this.peek().type === type;
+        }
+        
+        match(...types) {
+            for (const type of types) {
+                if (this.check(type)) {
+                    this.advance();
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        consume(type, message) {
+            if (this.check(type)) return this.advance();
+            throw new ParseError(message + ` Got ${this.peek().type}`, this.peek());
+        }
+        
+        // Parse program (entry point)
+        parse() {
+            const classes = [];
+            
+            while (!this.isAtEnd()) {
+                try {
+                    classes.push(this.classDeclaration());
+                } catch (error) {
+                    this.synchronize();
+                    throw error;
+                }
+            }
+            
+            return new window.JavaAST.Program(classes);
+        }
+        
+        // Parse class declaration
+        classDeclaration() {
+            const modifiers = [];
+            
+            // Parse modifiers
+            while (this.match(window.JavaLexer.TokenType.PUBLIC, window.JavaLexer.TokenType.PRIVATE)) {
+                modifiers.push(this.previous().value);
+            }
+            
+            this.consume(window.JavaLexer.TokenType.CLASS, "Expected 'class'");
+            
+            const name = this.consume(window.JavaLexer.TokenType.IDENTIFIER, "Expected class name").value;
+            
+            this.consume(window.JavaLexer.TokenType.LEFT_BRACE, "Expected '{' after class name");
+            
+            const methods = [];
+            while (!this.check(window.JavaLexer.TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+                methods.push(this.methodDeclaration());
+            }
+            
+            this.consume(window.JavaLexer.TokenType.RIGHT_BRACE, "Expected '}' after class body");
+            
+            return new window.JavaAST.ClassDeclaration(name, modifiers, methods);
+        }
+        
+        // Parse method declaration
+        methodDeclaration() {
+            const modifiers = [];
+            
+            // Parse modifiers
+            while (this.match(
+                window.JavaLexer.TokenType.PUBLIC, 
+                window.JavaLexer.TokenType.PRIVATE, 
+                window.JavaLexer.TokenType.STATIC
+            )) {
+                modifiers.push(this.previous().value);
+            }
+            
+            // Parse return type
+            let returnType;
+            if (this.match(window.JavaLexer.TokenType.VOID)) {
+                returnType = 'void';
+            } else if (this.match(window.JavaLexer.TokenType.INT)) {
+                returnType = 'int';
+            } else if (this.match(window.JavaLexer.TokenType.STRING)) {
+                returnType = 'String';
+            } else {
+                throw new ParseError("Expected return type", this.peek());
+            }
+            
+            const name = this.consume(window.JavaLexer.TokenType.IDENTIFIER, "Expected method name").value;
+            
+            this.consume(window.JavaLexer.TokenType.LEFT_PAREN, "Expected '(' after method name");
+            
+            const parameters = [];
+            if (!this.check(window.JavaLexer.TokenType.RIGHT_PAREN)) {
+                do {
+                    parameters.push(this.parameter());
+                } while (this.match(window.JavaLexer.TokenType.COMMA));
+            }
+            
+            this.consume(window.JavaLexer.TokenType.RIGHT_PAREN, "Expected ')' after parameters");
+            
+            const body = this.blockStatement();
+            
+            return new window.JavaAST.MethodDeclaration(name, returnType, parameters, modifiers, body);
+        }
+        
+        // Parse parameter
+        parameter() {
+            let type;
+            if (this.match(window.JavaLexer.TokenType.INT)) {
+                type = 'int';
+            } else if (this.match(window.JavaLexer.TokenType.STRING)) {
+                type = 'String';
+            } else {
+                throw new ParseError("Expected parameter type", this.peek());
+            }
+            
+            const name = this.consume(window.JavaLexer.TokenType.IDENTIFIER, "Expected parameter name").value;
+            
+            return new window.JavaAST.Parameter(type, name);
+        }
+        
+        // Parse block statement
+        blockStatement() {
+            this.consume(window.JavaLexer.TokenType.LEFT_BRACE, "Expected '{'");
+            
+            const statements = [];
+            while (!this.check(window.JavaLexer.TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+                statements.push(this.statement());
+            }
+            
+            this.consume(window.JavaLexer.TokenType.RIGHT_BRACE, "Expected '}'");
+            
+            return new window.JavaAST.BlockStatement(statements);
+        }
+        
+        // Parse statement
+        statement() {
+            if (this.match(window.JavaLexer.TokenType.IF)) {
+                return this.ifStatement();
+            }
+            if (this.match(window.JavaLexer.TokenType.WHILE)) {
+                return this.whileStatement();
+            }
+            if (this.match(window.JavaLexer.TokenType.RETURN)) {
+                return this.returnStatement();
+            }
+            if (this.match(window.JavaLexer.TokenType.INT, window.JavaLexer.TokenType.STRING)) {
+                return this.variableDeclaration();
+            }
+            if (this.check(window.JavaLexer.TokenType.LEFT_BRACE)) {
+                return this.blockStatement();
+            }
+            
+            return this.expressionStatement();
+        }
+        
+        // Parse if statement
+        ifStatement() {
+            this.consume(window.JavaLexer.TokenType.LEFT_PAREN, "Expected '(' after 'if'");
+            const condition = this.expression();
+            this.consume(window.JavaLexer.TokenType.RIGHT_PAREN, "Expected ')' after if condition");
+            
+            const thenStatement = this.statement();
+            let elseStatement = null;
+            
+            if (this.match(window.JavaLexer.TokenType.ELSE)) {
+                elseStatement = this.statement();
+            }
+            
+            return new window.JavaAST.IfStatement(condition, thenStatement, elseStatement);
+        }
+        
+        // Parse while statement
+        whileStatement() {
+            this.consume(window.JavaLexer.TokenType.LEFT_PAREN, "Expected '(' after 'while'");
+            const condition = this.expression();
+            this.consume(window.JavaLexer.TokenType.RIGHT_PAREN, "Expected ')' after while condition");
+            
+            const body = this.statement();
+            
+            return new window.JavaAST.WhileStatement(condition, body);
+        }
+        
+        // Parse return statement
+        returnStatement() {
+            let argument = null;
+            if (!this.check(window.JavaLexer.TokenType.SEMICOLON)) {
+                argument = this.expression();
+            }
+            
+            this.consume(window.JavaLexer.TokenType.SEMICOLON, "Expected ';' after return value");
+            
+            return new window.JavaAST.ReturnStatement(argument);
+        }
+        
+        // Parse variable declaration
+        variableDeclaration() {
+            const type = this.previous().value;
+            const name = this.consume(window.JavaLexer.TokenType.IDENTIFIER, "Expected variable name").value;
+            
+            let initializer = null;
+            if (this.match(window.JavaLexer.TokenType.ASSIGN)) {
+                initializer = this.expression();
+            }
+            
+            this.consume(window.JavaLexer.TokenType.SEMICOLON, "Expected ';' after variable declaration");
+            
+            return new window.JavaAST.VariableDeclaration(type, name, initializer);
+        }
+        
+        // Parse expression statement
+        expressionStatement() {
+            const expr = this.expression();
+            this.consume(window.JavaLexer.TokenType.SEMICOLON, "Expected ';' after expression");
+            return new window.JavaAST.ExpressionStatement(expr);
+        }
+        
+        // Parse expression
+        expression() {
+            return this.assignment();
+        }
+        
+        // Parse assignment
+        assignment() {
+            const expr = this.equality();
+            
+            if (this.match(window.JavaLexer.TokenType.ASSIGN)) {
+                const right = this.assignment();
+                return new window.JavaAST.AssignmentExpression(expr, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse equality
+        equality() {
+            let expr = this.comparison();
+            
+            while (this.match(window.JavaLexer.TokenType.EQUALS, window.JavaLexer.TokenType.NOT_EQUALS)) {
+                const operator = this.previous().value;
+                const right = this.comparison();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse comparison
+        comparison() {
+            let expr = this.term();
+            
+            while (this.match(window.JavaLexer.TokenType.GREATER_THAN, window.JavaLexer.TokenType.LESS_THAN)) {
+                const operator = this.previous().value;
+                const right = this.term();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse term (addition/subtraction)
+        term() {
+            let expr = this.factor();
+            
+            while (this.match(window.JavaLexer.TokenType.MINUS, window.JavaLexer.TokenType.PLUS)) {
+                const operator = this.previous().value;
+                const right = this.factor();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse factor (multiplication/division)
+        factor() {
+            let expr = this.call();
+            
+            while (this.match(window.JavaLexer.TokenType.DIVIDE, window.JavaLexer.TokenType.MULTIPLY)) {
+                const operator = this.previous().value;
+                const right = this.call();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse method calls
+        call() {
+            let expr = this.primary();
+            
+            while (true) {
+                if (this.match(window.JavaLexer.TokenType.DOT)) {
+                    const method = this.consume(window.JavaLexer.TokenType.IDENTIFIER, "Expected method name").value;
+                    this.consume(window.JavaLexer.TokenType.LEFT_PAREN, "Expected '(' after method name");
+                    
+                    const args = [];
+                    if (!this.check(window.JavaLexer.TokenType.RIGHT_PAREN)) {
+                        do {
+                            args.push(this.expression());
+                        } while (this.match(window.JavaLexer.TokenType.COMMA));
+                    }
+                    
+                    this.consume(window.JavaLexer.TokenType.RIGHT_PAREN, "Expected ')' after arguments");
+                    
+                    expr = new window.JavaAST.MethodCallExpression(expr, method, args);
+                } else {
+                    break;
+                }
+            }
+            
+            return expr;
+        }
+        
+        // Parse primary expressions
+        primary() {
+            if (this.match(window.JavaLexer.TokenType.STRING_LITERAL)) {
+                return new window.JavaAST.Literal(this.previous().value, 'string');
+            }
+            
+            if (this.match(window.JavaLexer.TokenType.NUMBER_LITERAL)) {
+                return new window.JavaAST.Literal(this.previous().value, 'number');
+            }
+            
+            if (this.match(window.JavaLexer.TokenType.IDENTIFIER)) {
+                return new window.JavaAST.Identifier(this.previous().value);
+            }
+            
+            if (this.match(window.JavaLexer.TokenType.LEFT_PAREN)) {
+                const expr = this.expression();
+                this.consume(window.JavaLexer.TokenType.RIGHT_PAREN, "Expected ')' after expression");
+                return expr;
+            }
+            
+            throw new ParseError("Expected expression", this.peek());
+        }
+        
+        // Error recovery
+        synchronize() {
+            this.advance();
+            
+            while (!this.isAtEnd()) {
+                if (this.previous().type === window.JavaLexer.TokenType.SEMICOLON) return;
+                
+                switch (this.peek().type) {
+                    case window.JavaLexer.TokenType.CLASS:
+                    case window.JavaLexer.TokenType.PUBLIC:
+                    case window.JavaLexer.TokenType.PRIVATE:
+                    case window.JavaLexer.TokenType.STATIC:
+                    case window.JavaLexer.TokenType.IF:
+                    case window.JavaLexer.TokenType.WHILE:
+                    case window.JavaLexer.TokenType.FOR:
+                    case window.JavaLexer.TokenType.RETURN:
+                        return;
+                }
+                
+                this.advance();
+            }
+        }
+    }
+    
+    // Export to window
+    window.JavaParser = {
+        Parser,
+        ParseError
+    };
+})();
+
+// ===== java-plugin.js =====
+(function() {
+    'use strict';
+    
+    class JavaPlugin extends window.EditorPlugin {
+        constructor() {
+            super('java');
+            this.colorScheme = {
+                keyword: '#0000ff',
+                string: '#008000',
+                number: '#ff8c00',
+                comment: '#808080',
+                identifier: '#000000',
+                operator: '#800080',
+                delimiter: '#000000'
+            };
+        }
+        
+        highlight(sourceCode) {
+            if (!sourceCode || sourceCode.trim() === '') {
+                return '';
+            }
+            
+            try {
+                // Use the Java lexer to tokenize
+                const lexer = new window.JavaLexer.Lexer(sourceCode);
+                const tokens = lexer.tokenize();
+                
+                return this.tokensToHtml(tokens, sourceCode);
+            } catch (error) {
+                console.error('Java highlighting failed:', error);
+                // Fallback to plain text
+                return this.escapeHtml(sourceCode);
+            }
+        }
+        
+        tokensToHtml(tokens, originalText) {
+            let html = '';
+            let lastPosition = 0;
+            
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i];
+                
+                if (token.type === window.JavaLexer.TokenType.EOF) {
+                    break;
+                }
+                
+                // Calculate token position in original text
+                const tokenStart = this.findTokenPosition(originalText, token, lastPosition);
+                
+                // Add any text between last token and this token
+                if (tokenStart > lastPosition) {
+                    const betweenText = originalText.slice(lastPosition, tokenStart);
+                    html += this.escapeHtml(betweenText);
+                }
+                
+                // Add the highlighted token
+                const color = this.getTokenColor(token.type);
+                const tokenText = this.escapeHtml(token.value || this.getTokenDisplay(token.type));
+                
+                if (color) {
+                    html += `<span style="color: ${color}">${tokenText}</span>`;
+                } else {
+                    html += tokenText;
+                }
+                
+                lastPosition = tokenStart + tokenText.length;
+            }
+            
+            // Add any remaining text
+            if (lastPosition < originalText.length) {
+                html += this.escapeHtml(originalText.slice(lastPosition));
+            }
+            
+            return html;
+        }
+        
+        findTokenPosition(text, token, startFrom) {
+            // Simple approach: find the token value starting from the last position
+            const searchValue = token.value || this.getTokenDisplay(token.type);
+            const position = text.indexOf(searchValue, startFrom);
+            return position >= 0 ? position : startFrom;
+        }
+        
+        getTokenDisplay(tokenType) {
+            const displays = {
+                [window.JavaLexer.TokenType.LEFT_PAREN]: '(',
+                [window.JavaLexer.TokenType.RIGHT_PAREN]: ')',
+                [window.JavaLexer.TokenType.LEFT_BRACE]: '{',
+                [window.JavaLexer.TokenType.RIGHT_BRACE]: '}',
+                [window.JavaLexer.TokenType.SEMICOLON]: ';',
+                [window.JavaLexer.TokenType.COMMA]: ',',
+                [window.JavaLexer.TokenType.DOT]: '.',
+                [window.JavaLexer.TokenType.PLUS]: '+',
+                [window.JavaLexer.TokenType.MINUS]: '-',
+                [window.JavaLexer.TokenType.MULTIPLY]: '*',
+                [window.JavaLexer.TokenType.DIVIDE]: '/',
+                [window.JavaLexer.TokenType.ASSIGN]: '=',
+                [window.JavaLexer.TokenType.EQUALS]: '==',
+                [window.JavaLexer.TokenType.NOT_EQUALS]: '!=',
+                [window.JavaLexer.TokenType.LESS_THAN]: '<',
+                [window.JavaLexer.TokenType.GREATER_THAN]: '>',
+                [window.JavaLexer.TokenType.NEWLINE]: '\n',
+                [window.JavaLexer.TokenType.WHITESPACE]: ' '
+            };
+            return displays[tokenType] || '';
+        }
+        
+        getTokenColor(tokenType) {
+            const { TokenType } = window.JavaLexer;
+            
+            // Keywords
+            if ([TokenType.CLASS, TokenType.PUBLIC, TokenType.PRIVATE, TokenType.STATIC,
+                 TokenType.VOID, TokenType.INT, TokenType.STRING, TokenType.IF,
+                 TokenType.ELSE, TokenType.WHILE, TokenType.FOR, TokenType.RETURN].includes(tokenType)) {
+                return this.colorScheme.keyword;
+            }
+            
+            // Literals  
+            if (tokenType === TokenType.STRING_LITERAL) {
+                return this.colorScheme.string;
+            }
+            
+            if (tokenType === TokenType.NUMBER_LITERAL) {
+                return this.colorScheme.number;
+            }
+            
+            // Operators
+            if ([TokenType.PLUS, TokenType.MINUS, TokenType.MULTIPLY, TokenType.DIVIDE,
+                 TokenType.ASSIGN, TokenType.EQUALS, TokenType.NOT_EQUALS,
+                 TokenType.LESS_THAN, TokenType.GREATER_THAN].includes(tokenType)) {
+                return this.colorScheme.operator;
+            }
+            
+            // Identifiers
+            if (tokenType === TokenType.IDENTIFIER) {
+                return this.colorScheme.identifier;
+            }
+            
+            // Delimiters - use default color
+            return null;
+        }
+        
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        getSupportedExtensions() {
+            return ['.java'];
+        }
+        
+        getDisplayName() {
+            return 'Java';
+        }
+    }
+    
+    // Export to window
+    window.JavaPlugin = JavaPlugin;
+})();
 
 // ===== api-manager.js =====
 (function() {
@@ -355,17 +1665,21 @@
 
 Available tools:
 1. read_file - Read the contents of a specific file
-2. search_files - Search for text across multiple files
+2. write_file - Write content to a file (creates or overwrites)
+3. search_files - Search for text across multiple files
 
 Tool usage format:
 <tool_use>{"tool_type": "read_file", "file_path": "/path/to/file"}</tool_use>
+<tool_use>{"tool_type": "write_file", "file_path": "/path/to/file", "content": "file content here"}</tool_use>
 <tool_use>{"tool_type": "search_files", "query": "search term"}</tool_use>
 
 Use tools when:
-- User asks about specific files or code
-- User wants to search for patterns, functions, or text
-- You need file contents to answer questions accurately
-- User asks "what files contain X" or "show me the code for Y"
+- You need to read file contents to understand, analyze, or answer questions about code
+- You need to write or save code, configurations, or other content to files
+- You need to search across files to find functions, patterns, or specific text
+- You want to examine existing code structure before making modifications
+- You need to create new files as part of implementing features or solutions
+- You want to understand what files exist and their relationships
 
 Always use the exact tool_use format shown above. The tools will search across the currently active project files.`;
 
@@ -1950,6 +3264,8 @@ Use this file structure to understand the project layout. You can read any of th
                 switch (toolData.tool_type) {
                     case 'read_file':
                         return await this.executeReadFile(toolData);
+                    case 'write_file':
+                        return await this.executeWriteFile(toolData);
                     case 'search_files':
                         return await this.executeSearchFiles(toolData);
                     default:
@@ -1993,6 +3309,44 @@ Use this file structure to understand the project layout. You can read any of th
 
             return {
                 tool_type: 'read_file',
+                file_path: toolData.file_path,
+                results: results
+            };
+        }
+
+        async executeWriteFile(toolData) {
+            const results = [];
+
+            if (!toolData.file_path) {
+                throw new Error('file_path is required for write_file tool');
+            }
+
+            if (toolData.content === undefined) {
+                throw new Error('content is required for write_file tool');
+            }
+
+            for (const projectId of this.activeProjects) {
+                const success = this.fileSystem.writeFile(projectId, toolData.file_path, toolData.content);
+                
+                if (success) {
+                    results.push({
+                        project_id: projectId,
+                        file_path: toolData.file_path,
+                        content_size: toolData.content.length,
+                        status: 'success'
+                    });
+                } else {
+                    results.push({
+                        project_id: projectId,
+                        file_path: toolData.file_path,
+                        status: 'failed',
+                        error: 'Failed to write file'
+                    });
+                }
+            }
+
+            return {
+                tool_type: 'write_file',
                 file_path: toolData.file_path,
                 results: results
             };
