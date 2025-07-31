@@ -1,6 +1,8 @@
 (function() {
     'use strict';
 
+    // Page replacement will eliminate notification popups entirely
+    
     // Configuration
     const CONFIG = {
         STORAGE_KEY: 'ai_chat_overlay_streaming_data',
@@ -645,14 +647,31 @@
         }
     }
 
-    // UI Creation
-    function createStreamingUI() {
-        const existing = document.getElementById('ai-chat-overlay-streaming');
-        if (existing) existing.remove();
+    // Complete page replacement
+    function replacePageWithStreamingUI() {
+        Logger.log('UI', 'Completely replacing page content');
+        
+        // Clear entire page
+        document.head.innerHTML = '';
+        document.body.innerHTML = '';
+        
+        // Add basic meta tags
+        const meta = document.createElement('meta');
+        meta.setAttribute('charset', 'UTF-8');
+        document.head.appendChild(meta);
+        
+        const viewport = document.createElement('meta');
+        viewport.setAttribute('name', 'viewport');
+        viewport.setAttribute('content', 'width=device-width, initial-scale=1.0');
+        document.head.appendChild(viewport);
+        
+        const title = document.createElement('title');
+        title.textContent = 'AI Chat Interface';
+        document.head.appendChild(title);
 
-        const overlay = document.createElement('div');
-        overlay.id = 'ai-chat-overlay-streaming';
-        overlay.innerHTML = `
+        const container = document.createElement('div');
+        container.id = 'ai-chat-interface';
+        container.innerHTML = `
             <div class="chat-container">
                 <div class="chat-header">
                     <h1>AI Chat (Streaming)</h1>
@@ -683,7 +702,18 @@
         // Add CSS styling
         const style = document.createElement('style');
         style.textContent = `
-            #ai-chat-overlay-streaming {
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            html, body {
+                height: 100%;
+                overflow: hidden;
+            }
+            
+            #ai-chat-interface {
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -909,9 +939,10 @@
         `;
 
         document.head.appendChild(style);
-        document.body.appendChild(overlay);
+        document.body.appendChild(container);
 
-        return overlay;
+        Logger.log('UI', 'Page replacement complete');
+        return container;
     }
 
     // Main App
@@ -920,7 +951,7 @@
             Logger.log('App', 'Initializing Streaming Chat App');
             this.apiManager = new StreamingAPIManager();
             this.chatManager = new ChatManager();
-            this.overlay = null;
+            this.container = null;
             this.elements = {};
             this.lastActivityTime = Date.now();
             this.heartbeatTimer = null;
@@ -930,8 +961,8 @@
         async init() {
             Logger.log('App', 'Starting initialization');
             
-            // Create UI
-            this.overlay = createStreamingUI();
+            // Replace entire page with our UI
+            this.container = replacePageWithStreamingUI();
             this.bindElements();
             this.bindEvents();
             
@@ -1198,9 +1229,9 @@
         close() {
             this.apiManager.clearActivityTimeout();
             this.stopHeartbeat();
-            if (this.overlay) {
-                this.overlay.remove();
-            }
+            // Since we replaced the entire page, just reload to restore original
+            Logger.log('App', 'Closing - reloading page to restore original interface');
+            window.location.reload();
         }
     }
 
