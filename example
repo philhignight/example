@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 07:49:48 PM UTC 2025
+// Generated on Thu Jul 31 08:06:08 PM UTC 2025
 
 // ===== api-manager.js =====
 (function() {
@@ -1827,42 +1827,68 @@ Use this file structure to understand the project layout. You can read any of th
             };
 
             // Look for complete tool use patterns in the buffer
-            const toolUseRegex = /<tool_use>(\{[^}]*\})<\/tool_use>/g;
+            // Use a more robust regex that handles nested JSON properly
+            const toolUseRegex = /<tool_use>([\s\S]*?)<\/tool_use>/g;
             let match;
-            let lastIndex = 0;
-            let bufferModified = false;
+            const newToolUses = [];
 
+            // Find all complete tool uses in the current buffer
             while ((match = toolUseRegex.exec(this.buffer)) !== null) {
                 try {
-                    const toolData = JSON.parse(match[1]);
-                    this.toolUses.push({
-                        fullMatch: match[0],
-                        data: toolData,
-                        position: match.index
-                    });
-
-                    parseResult.toolUses.push({
-                        fullMatch: match[0],
-                        data: toolData
-                    });
-
-                    bufferModified = true;
+                    const jsonStr = match[1].trim();
+                    const toolData = JSON.parse(jsonStr);
+                    
+                    // Check if this is a new tool use (not already processed)
+                    const isNewToolUse = !this.toolUses.some(existing => 
+                        existing.fullMatch === match[0]
+                    );
+                    
+                    if (isNewToolUse) {
+                        const toolUse = {
+                            fullMatch: match[0],
+                            data: toolData,
+                            position: match.index
+                        };
+                        
+                        this.toolUses.push(toolUse);
+                        newToolUses.push(toolUse);
+                        
+                        parseResult.toolUses.push({
+                            fullMatch: match[0],
+                            data: toolData
+                        });
+                    }
                 } catch (e) {
                     this.logger.warn('StreamingParser', 'Failed to parse tool JSON', { 
-                        json: match[1] 
+                        json: match[1].substring(0, 100) + '...' 
                     });
                 }
             }
 
-            // Remove processed tool uses from display text
-            if (bufferModified) {
-                let cleanChunk = chunk;
-                parseResult.toolUses.forEach(toolUse => {
-                    cleanChunk = cleanChunk.replace(toolUse.fullMatch, '');
-                });
-                parseResult.displayText = cleanChunk;
-            }
+            // Remove ALL tool use text from the display text (current chunk)
+            let cleanChunk = chunk;
+            this.toolUses.forEach(toolUse => {
+                // Only remove parts of tool uses that appear in this chunk
+                const toolUseText = toolUse.fullMatch;
+                if (cleanChunk.includes(toolUseText)) {
+                    cleanChunk = cleanChunk.replace(toolUseText, '');
+                } else {
+                    // Handle partial tool uses in chunks
+                    const toolUseStart = toolUseText.indexOf('<tool_use>');
+                    const toolUseEnd = toolUseText.indexOf('</tool_use>') + '</tool_use>'.length;
+                    
+                    // Remove any part of the tool use that appears in this chunk
+                    for (let i = toolUseStart; i < toolUseEnd; i++) {
+                        const partialText = toolUseText.substring(i);
+                        if (cleanChunk.includes(partialText)) {
+                            cleanChunk = cleanChunk.replace(partialText, '');
+                            break;
+                        }
+                    }
+                }
+            });
 
+            parseResult.displayText = cleanChunk;
             return parseResult;
         }
 
@@ -1873,9 +1899,20 @@ Use this file structure to understand the project layout. You can read any of th
         getCompleteOutput() {
             // Return output with tool use tags removed
             let cleanOutput = this.completeOutput;
-            this.toolUses.forEach(toolUse => {
+            
+            // Remove all tool use text in order of appearance (to handle overlaps correctly)
+            const sortedToolUses = this.toolUses
+                .slice()
+                .sort((a, b) => a.position - b.position);
+                
+            sortedToolUses.forEach(toolUse => {
                 cleanOutput = cleanOutput.replace(toolUse.fullMatch, '');
             });
+            
+            // Clean up any extra whitespace left by tool use removal
+            cleanOutput = cleanOutput.replace(/\n\s*\n\s*\n/g, '\n\n'); // Multiple newlines -> double newline
+            cleanOutput = cleanOutput.trim();
+            
             return cleanOutput;
         }
     }
@@ -2133,6 +2170,18 @@ Use this file structure to understand the project layout. You can read any of th
                 .folder-icon {
                     display: inline-block;
                     margin-right: 6px;
+                }
+
+                /* Nested file tree indentation */
+                .file-tree .file-tree {
+                    margin-left: 20px;
+                    border-left: 1px solid #444;
+                    padding-left: 8px;
+                }
+
+                .file-tree .file-tree .file-item,
+                .file-tree .file-tree .folder-item {
+                    padding-left: 4px;
                 }
 
                 .editor-tabs {
