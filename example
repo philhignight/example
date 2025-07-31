@@ -1327,6 +1327,7 @@
                 const existingConversationId = isHeartbeat ? null : this.chatManager.getConversationId();
                 
                 let streamContent = '';
+                let newConversationId = null;
                 
                 const result = await this.apiManager.sendMessage(
                     message,
@@ -1347,14 +1348,6 @@
                             Logger.log('Heartbeat', 'Heartbeat completed successfully');
                         } else {
                             Logger.log('App', 'Streaming completed');
-                            
-                            // Save conversation ID for new conversations
-                            if (result && result.conversationId && !existingConversationId) {
-                                this.chatManager.setConversationId(result.conversationId);
-                                Logger.log('App', 'Saved new conversation ID', { 
-                                    conversationId: result.conversationId 
-                                });
-                            }
                             
                             // Remove streaming indicator
                             if (this.currentStreamingMessage) {
@@ -1391,6 +1384,14 @@
                         }
                     }
                 );
+                
+                // Save conversation ID for new conversations (after await completes)
+                if (!isHeartbeat && result && result.conversationId && !existingConversationId) {
+                    this.chatManager.setConversationId(result.conversationId);
+                    Logger.log('App', 'Saved new conversation ID', { 
+                        conversationId: result.conversationId 
+                    });
+                }
                 
             } catch (error) {
                 if (!isHeartbeat) {
