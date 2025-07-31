@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 07:40:18 PM UTC 2025
+// Generated on Thu Jul 31 07:49:48 PM UTC 2025
 
 // ===== api-manager.js =====
 (function() {
@@ -342,18 +342,67 @@
             }
         }
 
-        createStep3Payload(conversationId, assistantMessageId, messages) {
+        createStep3Payload(conversationId, assistantMessageId, messages, projectContext = null) {
             this.logger.log('StreamingAPI', 'Creating Step 3 payload', { 
                 conversationId,
                 assistantMessageId,
-                messageCount: messages.length 
+                messageCount: messages.length,
+                hasProjectContext: !!projectContext
             });
 
+            // Build system message content
+            let systemContent = `You are an AI assistant with access to file system tools. When the user asks questions about code, files, or wants to search for information, use the available tools.
+
+Available tools:
+1. read_file - Read the contents of a specific file
+2. search_files - Search for text across multiple files
+
+Tool usage format:
+<tool_use>{"tool_type": "read_file", "file_path": "/path/to/file"}</tool_use>
+<tool_use>{"tool_type": "search_files", "query": "search term"}</tool_use>
+
+Use tools when:
+- User asks about specific files or code
+- User wants to search for patterns, functions, or text
+- You need file contents to answer questions accurately
+- User asks "what files contain X" or "show me the code for Y"
+
+Always use the exact tool_use format shown above. The tools will search across the currently active project files.`;
+
+            // Add project file structure for new conversations
+            if (projectContext && projectContext.isFirstMessage && projectContext.files) {
+                const tree = this.utils.buildFileTree(projectContext.files, 2);
+                const treeText = this.utils.renderFileTreeText(tree);
+                
+                systemContent += `
+
+CURRENT PROJECT FILES (2 levels deep):
+\`\`\`
+${treeText.trim()}
+\`\`\`
+
+Use this file structure to understand the project layout. You can read any of these files or search across them using the tools above.`;
+                
+                this.logger.log('StreamingAPI', 'Added project file structure to system message', {
+                    fileCount: projectContext.files.length,
+                    treeLines: treeText.split('\n').length
+                });
+            }
+
+            // Create system message with tool instructions
+            const systemMessage = {
+                role: 'system',
+                content: systemContent
+            };
+
             // Convert messages to simplified format (content + role only)
-            const simplifiedMessages = messages.map(msg => ({
-                content: msg.content,
-                role: msg.role
-            }));
+            const simplifiedMessages = [
+                systemMessage,
+                ...messages.map(msg => ({
+                    content: msg.content,
+                    role: msg.role
+                }))
+            ];
 
             const payload = {
                 background_tasks: {
@@ -373,20 +422,21 @@
             };
 
             this.logger.log('StreamingAPI', 'Step 3 payload created', { 
-                simplifiedMessageCount: simplifiedMessages.length 
+                originalMessageCount: messages.length,
+                totalWithSystem: simplifiedMessages.length 
             });
 
             return payload;
         }
 
-        async step3StreamResponse(conversationId, assistantMessageId, messages, onChunk, onComplete, onError) {
+        async step3StreamResponse(conversationId, assistantMessageId, messages, onChunk, onComplete, onError, projectContext = null) {
             this.logger.log('StreamingAPI', 'STEP 3: Starting response stream', { 
                 conversationId,
                 assistantMessageId 
             });
 
             try {
-                const payload = this.createStep3Payload(conversationId, assistantMessageId, messages);
+                const payload = this.createStep3Payload(conversationId, assistantMessageId, messages, projectContext);
 
                 this.logger.log('StreamingAPI', 'Sending Step 3 request', { 
                     endpoint: this.config.COMPLETIONS_ENDPOINT 
@@ -509,7 +559,7 @@
             }
         }
 
-        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk, onComplete, onError, onProgress = null) {
+        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk, onComplete, onError, onProgress = null, projectContext = null) {
             const isNewConversation = !existingConversationId;
             
             this.logger.log('StreamingAPI', 'Starting message flow', { 
@@ -601,6 +651,12 @@
                     if (onProgress) onProgress(2, 2, 'Starting response stream...');
                 }
                 
+                // Enhance project context for first messages
+                const enhancedProjectContext = projectContext ? {
+                    ...projectContext,
+                    isFirstMessage: isNewConversation && conversationHistory.length === 0
+                } : null;
+
                 await this.step3StreamResponse(
                     conversationId,
                     step2Result.assistantMessageId,
@@ -611,7 +667,8 @@
                         onChunk(chunk);
                     },
                     onComplete,
-                    onError
+                    onError,
+                    enhancedProjectContext
                 );
 
                 // Return conversation ID for new conversations
@@ -845,7 +902,7 @@
                 if (item.__isFile) {
                     const fileEl = document.createElement('div');
                     fileEl.className = 'file-item';
-                    fileEl.textContent = name;
+                    fileEl.innerHTML = `📄 ${name}`;
                     fileEl.addEventListener('click', () => {
                         this.openFile(item.path);
                     });
@@ -853,7 +910,7 @@
                 } else {
                     const folderEl = document.createElement('div');
                     folderEl.className = 'folder-item';
-                    folderEl.innerHTML = `<span class="folder-icon">▶</span>${name}`;
+                    folderEl.innerHTML = `<span class="folder-icon">📁</span>${name}`;
                     
                     const childContainer = this.renderFileTree(item, parentPath + name + '/');
                     childContainer.style.display = 'none';
@@ -862,6 +919,12 @@
                         const isExpanded = folderEl.classList.contains('expanded');
                         folderEl.classList.toggle('expanded');
                         childContainer.style.display = isExpanded ? 'none' : 'block';
+                        
+                        // Update folder icon based on expanded state
+                        const folderIcon = folderEl.querySelector('.folder-icon');
+                        if (folderIcon) {
+                            folderIcon.textContent = isExpanded ? '📁' : '📂';
+                        }
                     });
                     
                     container.appendChild(folderEl);
@@ -1349,6 +1412,11 @@
                             this.updateProgressMessage(message, current, total);
                             this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
                         }
+                    } : null,
+                    // projectContext - include file structure for first message
+                    this.currentProject ? {
+                        projectId: this.currentProject,
+                        files: this.fileSystem.listFiles(this.currentProject)
                     } : null
                 );
                 
@@ -2065,11 +2133,6 @@
                 .folder-icon {
                     display: inline-block;
                     margin-right: 6px;
-                    transition: transform 0.2s;
-                }
-
-                .folder-item.expanded .folder-icon {
-                    transform: rotate(90deg);
                 }
 
                 .editor-tabs {
@@ -2484,6 +2547,63 @@
         
         get10DigitTimestamp: () => {
             return Math.floor(Date.now() / 1000);
+        },
+
+        buildFileTree: (files, maxDepth = 2) => {
+            const tree = {};
+            
+            files.forEach(filePath => {
+                const parts = filePath.split('/').filter(p => p);
+                let current = tree;
+                
+                for (let i = 0; i < Math.min(parts.length, maxDepth + 1); i++) {
+                    const part = parts[i];
+                    const isFile = i === parts.length - 1;
+                    const isAtMaxDepth = i === maxDepth;
+                    
+                    if (isAtMaxDepth && !isFile) {
+                        // At max depth and it's a directory, show as "..."
+                        if (!current['...']) {
+                            current['...'] = { __isMoreFiles: true };
+                        }
+                        break;
+                    }
+                    
+                    if (!current[part]) {
+                        current[part] = isFile ? { __isFile: true, path: filePath } : {};
+                    }
+                    
+                    if (!isFile) {
+                        current = current[part];
+                    }
+                }
+            });
+            
+            return tree;
+        },
+
+        renderFileTreeText: (tree, indent = '') => {
+            let result = '';
+            const items = Object.keys(tree).sort();
+            
+            for (let i = 0; i < items.length; i++) {
+                const name = items[i];
+                const item = tree[name];
+                const isLast = i === items.length - 1;
+                const connector = isLast ? '└── ' : '├── ';
+                
+                if (item.__isFile) {
+                    result += `${indent}${connector}📄 ${name}\n`;
+                } else if (item.__isMoreFiles) {
+                    result += `${indent}${connector}... (more files)\n`;
+                } else {
+                    result += `${indent}${connector}📁 ${name}/\n`;
+                    const nextIndent = indent + (isLast ? '    ' : '│   ');
+                    result += window.StreamingChatUtils.renderFileTreeText(item, nextIndent);
+                }
+            }
+            
+            return result;
         }
     };
 
