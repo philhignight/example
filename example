@@ -252,7 +252,8 @@
                 return {
                     conversationId: responseData.id,
                     userId: responseData.user_id,
-                    userMessageId: payload.chat.messages[0].id
+                    userMessageId: payload.chat.messages[payload.chat.messages.length - 1].id,
+                    payload: payload
                 };
 
             } catch (error) {
@@ -262,49 +263,25 @@
             }
         }
 
-        async step2GetConversationAndAddAssistantSlot(conversationId) {
-            Logger.log('StreamingAPI', 'STEP 2: Get conversation and add assistant message slot', { 
+        async step2AddAssistantSlot(conversationId, step1Payload) {
+            Logger.log('StreamingAPI', 'STEP 2: Add assistant message slot (skipping GET)', { 
                 conversationId 
             });
 
             try {
-                // Step 2a: GET current conversation
-                Logger.log('StreamingAPI', 'Step 2a: Getting current conversation');
-                const getResponse = await fetch(`${CONFIG.GET_CHAT_ENDPOINT}${conversationId}`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${this.token}`
-                    }
-                });
-
-                Logger.log('StreamingAPI', 'Step 2a response received', { 
-                    status: getResponse.status
-                });
-
-                if (!getResponse.ok) {
-                    throw new Error(`Step 2a failed: ${getResponse.status} ${getResponse.statusText}`);
-                }
-
-                const conversationData = await getResponse.json();
-                Logger.log('StreamingAPI', 'Step 2a successful', { 
-                    messageCount: conversationData.chat?.messages?.length || 0
-                });
-
-                // Step 2b: Add empty assistant message and POST back
-                Logger.log('StreamingAPI', 'Step 2b: Adding empty assistant message');
-                
                 const assistantMessageId = Utils.generateUUID();
                 const timestamp10 = Utils.get10DigitTimestamp();
                 
-                // Find the last message to get its ID for parentId
-                const messages = conversationData.chat?.messages || [];
+                // Find the last message from Step 1 payload for parentId
+                const messages = step1Payload.chat.messages || [];
                 const lastMessage = messages[messages.length - 1];
                 const parentId = lastMessage ? lastMessage.id : null;
                 
-                Logger.log('StreamingAPI', 'Creating assistant message', {
+                Logger.log('StreamingAPI', 'Creating assistant message from Step 1 data', {
                     assistantMessageId,
                     parentId,
-                    timestamp10
+                    timestamp10,
+                    step1MessageCount: messages.length
                 });
 
                 // Create the empty assistant message
@@ -318,27 +295,52 @@
                     timestamp: timestamp10
                 };
 
-                // Update the conversation data
-                const updatedConversation = JSON.parse(JSON.stringify(conversationData));
+                // Build conversation structure based on Step 1 payload
+                const conversationData = {
+                    archived: false,
+                    chat: {
+                        files: [],
+                        history: {
+                            currentId: assistantMessageId,
+                            messages: JSON.parse(JSON.stringify(step1Payload.chat.history.messages))
+                        },
+                        id: conversationId,
+                        messages: [...step1Payload.chat.messages],
+                        models: ["Anthropic Claude 4 Sonnet"],
+                        params: {},
+                        tags: [],
+                        timestamp: step1Payload.chat.timestamp,
+                        title: "Chat Pending"
+                    },
+                    created_at: timestamp10,
+                    folder_id: null,
+                    id: conversationId,
+                    meta: {},
+                    pinned: false,
+                    share_id: null,
+                    title: "Chat Pending",
+                    updated_at: timestamp10,
+                    user_id: null, // Will be filled by server
+                    workspace_id: null,
+                    workspace_name: null,
+                    workspace_type: null
+                };
                 
-                // Add to messages array
-                updatedConversation.chat.messages.push(assistantMessage);
+                // Add assistant message to messages array
+                conversationData.chat.messages.push(assistantMessage);
                 
                 // Add to history.messages
-                updatedConversation.chat.history.messages[assistantMessageId] = assistantMessage;
-                
-                // Update history.currentId
-                updatedConversation.chat.history.currentId = assistantMessageId;
+                conversationData.chat.history.messages[assistantMessageId] = assistantMessage;
                 
                 // Update parent message's childrenIds if it exists
-                if (parentId && updatedConversation.chat.history.messages[parentId]) {
-                    if (!updatedConversation.chat.history.messages[parentId].childrenIds) {
-                        updatedConversation.chat.history.messages[parentId].childrenIds = [];
+                if (parentId && conversationData.chat.history.messages[parentId]) {
+                    if (!conversationData.chat.history.messages[parentId].childrenIds) {
+                        conversationData.chat.history.messages[parentId].childrenIds = [];
                     }
-                    updatedConversation.chat.history.messages[parentId].childrenIds.push(assistantMessageId);
+                    conversationData.chat.history.messages[parentId].childrenIds.push(assistantMessageId);
                     
                     // Also update in messages array
-                    const parentInMessages = updatedConversation.chat.messages.find(msg => msg.id === parentId);
+                    const parentInMessages = conversationData.chat.messages.find(msg => msg.id === parentId);
                     if (parentInMessages) {
                         if (!parentInMessages.childrenIds) {
                             parentInMessages.childrenIds = [];
@@ -347,27 +349,27 @@
                     }
                 }
 
-                Logger.log('StreamingAPI', 'Step 2b: Posting updated conversation', {
-                    totalMessages: updatedConversation.chat.messages.length,
+                Logger.log('StreamingAPI', 'Step 2: Posting conversation with assistant slot', {
+                    totalMessages: conversationData.chat.messages.length,
                     assistantMessageId
                 });
 
-                // POST the updated conversation
+                // POST the conversation with assistant message slot
                 const postResponse = await fetch(`${CONFIG.GET_CHAT_ENDPOINT}${conversationId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${this.token}`
                     },
-                    body: JSON.stringify(updatedConversation)
+                    body: JSON.stringify(conversationData)
                 });
 
-                Logger.log('StreamingAPI', 'Step 2b response received', { 
+                Logger.log('StreamingAPI', 'Step 2 response received', { 
                     status: postResponse.status
                 });
 
                 if (!postResponse.ok) {
-                    throw new Error(`Step 2b failed: ${postResponse.status} ${postResponse.statusText}`);
+                    throw new Error(`Step 2 failed: ${postResponse.status} ${postResponse.statusText}`);
                 }
 
                 const postResponseData = await postResponse.json();
@@ -377,7 +379,7 @@
 
                 return {
                     assistantMessageId: assistantMessageId,
-                    conversationData: updatedConversation
+                    conversationData: conversationData
                 };
 
             } catch (error) {
@@ -551,9 +553,10 @@
                 // Step 1: Create conversation
                 const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
                 
-                // Step 2: Get conversation and add assistant message slot
-                const step2Result = await this.step2GetConversationAndAddAssistantSlot(
-                    step1Result.conversationId
+                // Step 2: Add assistant message slot (no GET needed)
+                const step2Result = await this.step2AddAssistantSlot(
+                    step1Result.conversationId,
+                    step1Result.payload
                 );
                 
                 // Step 3: Stream response
