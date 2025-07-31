@@ -263,6 +263,159 @@
             }
         }
 
+        async step2AddAssistantSlotToExistingConversation(conversationId, userMessage, conversationHistory) {
+            Logger.log('StreamingAPI', 'STEP 2: Add assistant slot to existing conversation', { 
+                conversationId,
+                historyLength: conversationHistory.length
+            });
+
+            try {
+                const assistantMessageId = Utils.generateUUID();
+                const timestamp13 = Utils.get13DigitTimestamp();
+                const timestamp10 = Utils.get10DigitTimestamp();
+                
+                // Build complete message chain including new user message
+                const messages = [];
+                const historyMessages = {};
+                let previousMessageId = null;
+                
+                // Add all conversation history
+                conversationHistory.forEach((historyMsg, index) => {
+                    const msgId = Utils.generateUUID();
+                    const message = {
+                        childrenIds: [],
+                        content: historyMsg.content,
+                        id: msgId,
+                        models: ["Anthropic Claude 4 Sonnet"],
+                        parentId: previousMessageId,
+                        role: historyMsg.role,
+                        timestamp: timestamp10
+                    };
+                    
+                    // Update previous message's childrenIds
+                    if (previousMessageId && historyMessages[previousMessageId]) {
+                        historyMessages[previousMessageId].childrenIds.push(msgId);
+                    }
+                    
+                    messages.push(message);
+                    historyMessages[msgId] = message;
+                    previousMessageId = msgId;
+                });
+                
+                // Add new user message
+                const userMessageId = Utils.generateUUID();
+                const userMessageObj = {
+                    childrenIds: [],
+                    content: userMessage,
+                    id: userMessageId,
+                    models: ["Anthropic Claude 4 Sonnet"],
+                    parentId: previousMessageId,
+                    role: "user",
+                    timestamp: timestamp10
+                };
+                
+                // Update previous message's childrenIds
+                if (previousMessageId && historyMessages[previousMessageId]) {
+                    historyMessages[previousMessageId].childrenIds.push(userMessageId);
+                }
+                
+                messages.push(userMessageObj);
+                historyMessages[userMessageId] = userMessageObj;
+                
+                // Add empty assistant message
+                const assistantMessage = {
+                    childrenIds: [],
+                    content: "",
+                    id: assistantMessageId,
+                    models: ["Anthropic Claude 4 Sonnet"],
+                    parentId: userMessageId,
+                    role: "assistant",
+                    timestamp: timestamp10
+                };
+                
+                // Update user message's childrenIds
+                userMessageObj.childrenIds.push(assistantMessageId);
+                historyMessages[userMessageId].childrenIds.push(assistantMessageId);
+                
+                messages.push(assistantMessage);
+                historyMessages[assistantMessageId] = assistantMessage;
+
+                Logger.log('StreamingAPI', 'Built complete message chain for existing conversation', {
+                    totalMessages: messages.length,
+                    assistantMessageId,
+                    userMessageId
+                });
+
+                // Build conversation structure
+                const conversationData = {
+                    archived: false,
+                    chat: {
+                        files: [],
+                        history: {
+                            currentId: assistantMessageId,
+                            messages: historyMessages
+                        },
+                        id: conversationId,
+                        messages: messages,
+                        models: ["Anthropic Claude 4 Sonnet"],
+                        params: {},
+                        tags: [],
+                        timestamp: timestamp13,
+                        title: "Chat Pending"
+                    },
+                    created_at: timestamp10,
+                    folder_id: null,
+                    id: conversationId,
+                    meta: {},
+                    pinned: false,
+                    share_id: null,
+                    title: "Chat Pending",
+                    updated_at: timestamp10,
+                    user_id: null,
+                    workspace_id: null,
+                    workspace_name: null,
+                    workspace_type: null
+                };
+
+                Logger.log('StreamingAPI', 'Step 2: Posting updated conversation', {
+                    totalMessages: conversationData.chat.messages.length,
+                    assistantMessageId
+                });
+
+                // POST the updated conversation
+                const postResponse = await fetch(`${CONFIG.GET_CHAT_ENDPOINT}${conversationId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.token}`
+                    },
+                    body: JSON.stringify(conversationData)
+                });
+
+                Logger.log('StreamingAPI', 'Step 2 response received', { 
+                    status: postResponse.status
+                });
+
+                if (!postResponse.ok) {
+                    throw new Error(`Step 2 failed: ${postResponse.status} ${postResponse.statusText}`);
+                }
+
+                const postResponseData = await postResponse.json();
+                Logger.log('StreamingAPI', 'Step 2 complete - assistant message slot added to existing conversation', { 
+                    assistantMessageId
+                });
+
+                return {
+                    assistantMessageId: assistantMessageId,
+                    conversationData: conversationData
+                };
+
+            } catch (error) {
+                Logger.error('StreamingAPI', 'Step 2 (existing conversation) failed', error);
+                throw error;
+            }
+        }
+
         async step2AddAssistantSlot(conversationId, step1Payload) {
             Logger.log('StreamingAPI', 'STEP 2: Add assistant message slot (skipping GET)', { 
                 conversationId 
@@ -544,35 +697,60 @@
             }
         }
 
-        async sendMessage(userMessage, conversationHistory = [], onChunk, onComplete, onError) {
-            Logger.log('StreamingAPI', 'Starting complete 3-step message flow', { 
-                userMessage: userMessage.substring(0, 50) + '...' 
+        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk, onComplete, onError) {
+            const isNewConversation = !existingConversationId;
+            
+            Logger.log('StreamingAPI', 'Starting message flow', { 
+                userMessage: userMessage.substring(0, 50) + '...',
+                isNewConversation,
+                existingConversationId,
+                historyLength: conversationHistory.length
             });
 
             try {
-                // Step 1: Create conversation
-                const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
+                let conversationId;
+                let step2Result;
                 
-                // Step 2: Add assistant message slot (no GET needed)
-                const step2Result = await this.step2AddAssistantSlot(
-                    step1Result.conversationId,
-                    step1Result.payload
-                );
+                if (isNewConversation) {
+                    Logger.log('StreamingAPI', 'NEW CONVERSATION: Running Step 1 + Step 2');
+                    // Step 1: Create conversation
+                    const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
+                    conversationId = step1Result.conversationId;
+                    
+                    // Step 2: Add assistant message slot (no GET needed)
+                    step2Result = await this.step2AddAssistantSlot(
+                        step1Result.conversationId,
+                        step1Result.payload
+                    );
+                } else {
+                    Logger.log('StreamingAPI', 'EXISTING CONVERSATION: Running Step 2 only');
+                    conversationId = existingConversationId;
+                    
+                    // Step 2: Add assistant slot to existing conversation with full history
+                    step2Result = await this.step2AddAssistantSlotToExistingConversation(
+                        existingConversationId,
+                        userMessage,
+                        conversationHistory
+                    );
+                }
                 
-                // Step 3: Stream response
+                // Step 3: Stream response (same for both flows)
                 const allMessages = [
                     ...conversationHistory,
                     { role: 'user', content: userMessage }
                 ];
                 
                 await this.step3StreamResponse(
-                    step1Result.conversationId,
+                    conversationId,
                     step2Result.assistantMessageId,
                     allMessages,
                     onChunk,
                     onComplete,
                     onError
                 );
+
+                // Return conversation ID for new conversations
+                return { conversationId };
 
             } catch (error) {
                 Logger.error('StreamingAPI', 'Complete message flow failed', error);
@@ -611,7 +789,8 @@
             const chat = {
                 id: chatId,
                 timestamp: new Date().toLocaleString(),
-                messages: []
+                messages: [],
+                conversationId: null // Will be set when first message is sent
             };
             this.data.chats.unshift(chat);
             this.data.currentChatId = chatId;
@@ -647,6 +826,23 @@
                 role: msg.role,
                 content: msg.content
             }));
+        }
+
+        setConversationId(conversationId) {
+            const chat = this.getCurrentChat();
+            if (chat) {
+                chat.conversationId = conversationId;
+                this.saveData();
+                Logger.log('ChatManager', 'Conversation ID set', { 
+                    chatId: chat.id, 
+                    conversationId 
+                });
+            }
+        }
+
+        getConversationId() {
+            const chat = this.getCurrentChat();
+            return chat ? chat.conversationId : null;
         }
     }
 
@@ -1125,15 +1321,17 @@
                     this.updateStatus('Creating conversation...', 'streaming');
                 }
                 
-                // Get conversation history
+                // Get conversation history and existing conversation ID
                 const conversationHistory = isHeartbeat ? [] : 
                     this.chatManager.getConversationHistory().slice(0, -1); // Exclude the message we just added
+                const existingConversationId = isHeartbeat ? null : this.chatManager.getConversationId();
                 
                 let streamContent = '';
                 
-                await this.apiManager.sendMessage(
+                const result = await this.apiManager.sendMessage(
                     message,
                     conversationHistory,
+                    existingConversationId,
                     // onChunk
                     (chunk) => {
                         if (!isHeartbeat && this.currentStreamingMessage) {
@@ -1149,6 +1347,14 @@
                             Logger.log('Heartbeat', 'Heartbeat completed successfully');
                         } else {
                             Logger.log('App', 'Streaming completed');
+                            
+                            // Save conversation ID for new conversations
+                            if (result && result.conversationId && !existingConversationId) {
+                                this.chatManager.setConversationId(result.conversationId);
+                                Logger.log('App', 'Saved new conversation ID', { 
+                                    conversationId: result.conversationId 
+                                });
+                            }
                             
                             // Remove streaming indicator
                             if (this.currentStreamingMessage) {
