@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 06:38:33 PM UTC 2025
+// Generated on Thu Jul 31 06:50:35 PM UTC 2025
 
 // ===== api-manager.js =====
 (function() {
@@ -217,70 +217,98 @@
             }
         }
 
-        async step2AddAssistantMessage(conversationId) {
-            this.logger.log('StreamingAPI', 'STEP 2: Adding assistant message slot');
+        async step2AddAssistantSlot(conversationId, step1Payload) {
+            this.logger.log('StreamingAPI', 'STEP 2: Add assistant message slot (skipping GET)', { 
+                conversationId 
+            });
 
             try {
-                // Step 2a: Get current conversation state
-                const getUrl = `${this.config.GET_CHAT_ENDPOINT}${conversationId}`;
-                this.logger.log('StreamingAPI', 'Step 2a: Getting conversation', { url: getUrl });
-
-                const getResponse = await fetch(getUrl, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${this.token}`
-                    }
-                });
-
-                if (!getResponse.ok) {
-                    throw new Error(`Step 2a failed: ${getResponse.status} ${getResponse.statusText}`);
-                }
-
-                const conversationData = await getResponse.json();
-                this.logger.log('StreamingAPI', 'Step 2a successful', { 
-                    messagesCount: conversationData.chat.messages.length 
-                });
-
-                // Step 2b: Add empty assistant message
                 const assistantMessageId = this.utils.generateUUID();
                 const timestamp10 = this.utils.get10DigitTimestamp();
+                
+                // Find the last message from Step 1 payload for parentId
+                const messages = step1Payload.chat.messages || [];
+                const lastMessage = messages[messages.length - 1];
+                const parentId = lastMessage ? lastMessage.id : null;
+                
+                this.logger.log('StreamingAPI', 'Creating assistant message from Step 1 data', {
+                    assistantMessageId,
+                    parentId,
+                    timestamp10,
+                    step1MessageCount: messages.length
+                });
 
-                // Find the last user message to set as parent
-                const userMessages = conversationData.chat.messages.filter(m => m.role === 'user');
-                const lastUserMessage = userMessages[userMessages.length - 1];
-
+                // Create the empty assistant message
                 const assistantMessage = {
                     childrenIds: [],
                     content: "",
                     id: assistantMessageId,
                     models: ["Anthropic Claude 4 Sonnet"],
-                    parentId: lastUserMessage ? lastUserMessage.id : null,
+                    parentId: parentId,
                     role: "assistant",
                     timestamp: timestamp10
                 };
 
-                // Update parent's childrenIds
-                if (lastUserMessage) {
-                    const parentInMessages = conversationData.chat.messages.find(m => m.id === lastUserMessage.id);
-                    if (parentInMessages) {
-                        parentInMessages.childrenIds.push(assistantMessageId);
+                // Build conversation structure based on Step 1 payload
+                const conversationData = {
+                    archived: false,
+                    chat: {
+                        files: [],
+                        history: {
+                            currentId: assistantMessageId,
+                            messages: JSON.parse(JSON.stringify(step1Payload.chat.history.messages))
+                        },
+                        id: conversationId,
+                        messages: [...step1Payload.chat.messages],
+                        models: ["Anthropic Claude 4 Sonnet"],
+                        params: {},
+                        tags: [],
+                        timestamp: step1Payload.chat.timestamp,
+                        title: "Chat Pending"
+                    },
+                    created_at: timestamp10,
+                    folder_id: null,
+                    id: conversationId,
+                    meta: {},
+                    pinned: false,
+                    share_id: null,
+                    title: "Chat Pending",
+                    updated_at: timestamp10,
+                    user_id: null, // Will be filled by server
+                    workspace_id: null,
+                    workspace_name: null,
+                    workspace_type: null
+                };
+                
+                // Add assistant message to messages array
+                conversationData.chat.messages.push(assistantMessage);
+                
+                // Add to history.messages
+                conversationData.chat.history.messages[assistantMessageId] = assistantMessage;
+                
+                // Update parent message's childrenIds if it exists
+                if (parentId && conversationData.chat.history.messages[parentId]) {
+                    if (!conversationData.chat.history.messages[parentId].childrenIds) {
+                        conversationData.chat.history.messages[parentId].childrenIds = [];
                     }
-
-                    const parentInHistory = conversationData.chat.history.messages[lastUserMessage.id];
-                    if (parentInHistory) {
-                        parentInHistory.childrenIds.push(assistantMessageId);
+                    conversationData.chat.history.messages[parentId].childrenIds.push(assistantMessageId);
+                    
+                    // Also update in messages array
+                    const parentInMessages = conversationData.chat.messages.find(msg => msg.id === parentId);
+                    if (parentInMessages) {
+                        if (!parentInMessages.childrenIds) {
+                            parentInMessages.childrenIds = [];
+                        }
+                        parentInMessages.childrenIds.push(assistantMessageId);
                     }
                 }
 
-                // Add to messages array
-                conversationData.chat.messages.push(assistantMessage);
+                this.logger.log('StreamingAPI', 'Step 2: Posting conversation with assistant slot', {
+                    totalMessages: conversationData.chat.messages.length,
+                    assistantMessageId
+                });
 
-                // Add to history
-                conversationData.chat.history.messages[assistantMessageId] = assistantMessage;
-                conversationData.chat.history.currentId = assistantMessageId;
-
-                this.logger.log('StreamingAPI', 'Step 2b: Posting updated conversation');
-
+                // POST the conversation with assistant message slot
                 const postResponse = await fetch(`${this.config.GET_CHAT_ENDPOINT}${conversationId}`, {
                     method: 'POST',
                     headers: {
@@ -290,15 +318,23 @@
                     body: JSON.stringify(conversationData)
                 });
 
-                if (!postResponse.ok) {
-                    throw new Error(`Step 2b failed: ${postResponse.status} ${postResponse.statusText}`);
-                }
-
-                this.logger.log('StreamingAPI', 'Step 2 successful', { 
-                    assistantMessageId 
+                this.logger.log('StreamingAPI', 'Step 2 response received', { 
+                    status: postResponse.status
                 });
 
-                return { assistantMessageId };
+                if (!postResponse.ok) {
+                    throw new Error(`Step 2 failed: ${postResponse.status} ${postResponse.statusText}`);
+                }
+
+                const postResponseData = await postResponse.json();
+                this.logger.log('StreamingAPI', 'Step 2 complete - assistant message slot created', { 
+                    assistantMessageId
+                });
+
+                return {
+                    assistantMessageId: assistantMessageId,
+                    conversationData: conversationData
+                };
 
             } catch (error) {
                 this.logger.error('StreamingAPI', 'Step 2 failed', error);
@@ -306,40 +342,55 @@
             }
         }
 
-        async step3StreamCompletions(conversationId, assistantMessageId, messages, onChunk, onComplete, onError, onProgress) {
-            this.logger.log('StreamingAPI', 'STEP 3: Starting streaming completions');
+        createStep3Payload(conversationId, assistantMessageId, messages) {
+            this.logger.log('StreamingAPI', 'Creating Step 3 payload', { 
+                conversationId,
+                assistantMessageId,
+                messageCount: messages.length 
+            });
+
+            // Convert messages to simplified format (content + role only)
+            const simplifiedMessages = messages.map(msg => ({
+                content: msg.content,
+                role: msg.role
+            }));
+
+            const payload = {
+                background_tasks: {
+                    title_generation: true,
+                    tags_generation: true
+                },
+                chat_id: conversationId,
+                features: {
+                    web_search: false
+                },
+                id: assistantMessageId,
+                messages: simplifiedMessages,
+                model: "Anthropic Claude 4 Sonnet",
+                params: {},
+                session_id: this.config.SESSION_ID,
+                stream: true
+            };
+
+            this.logger.log('StreamingAPI', 'Step 3 payload created', { 
+                simplifiedMessageCount: simplifiedMessages.length 
+            });
+
+            return payload;
+        }
+
+        async step3StreamResponse(conversationId, assistantMessageId, messages, onChunk, onComplete, onError) {
+            this.logger.log('StreamingAPI', 'STEP 3: Starting response stream', { 
+                conversationId,
+                assistantMessageId 
+            });
 
             try {
-                // Progress: Step 3 starting
-                if (onProgress) onProgress(1, 3, 'Starting streaming...');
-
-                const payload = {
-                    background_tasks: {
-                        title_generation: true,
-                        tags_generation: true
-                    },
-                    chat_id: conversationId,
-                    features: {
-                        web_search: false
-                    },
-                    id: assistantMessageId,
-                    messages: messages.map(msg => ({
-                        content: msg.content,
-                        role: msg.role
-                    })),
-                    model: "Anthropic Claude 4 Sonnet",
-                    params: {},
-                    session_id: this.config.SESSION_ID,
-                    stream: true
-                };
+                const payload = this.createStep3Payload(conversationId, assistantMessageId, messages);
 
                 this.logger.log('StreamingAPI', 'Sending Step 3 request', { 
-                    endpoint: this.config.COMPLETIONS_ENDPOINT,
-                    messagesCount: payload.messages.length
+                    endpoint: this.config.COMPLETIONS_ENDPOINT 
                 });
-
-                // Progress: Request sent
-                if (onProgress) onProgress(2, 3, 'Request sent, waiting for response...');
 
                 const response = await fetch(this.config.COMPLETIONS_ENDPOINT, {
                     method: 'POST',
@@ -350,108 +401,225 @@
                     body: JSON.stringify(payload)
                 });
 
+                this.logger.log('StreamingAPI', 'Step 3 response received', { 
+                    status: response.status,
+                    statusText: response.statusText
+                });
+
                 if (!response.ok) {
                     throw new Error(`Step 3 failed: ${response.status} ${response.statusText}`);
                 }
 
-                // Progress: Response received, start streaming
-                if (onProgress) onProgress(null, null, 'Streaming response...');
+                if (!response.body) {
+                    throw new Error('Step 3 - no response body for streaming');
+                }
 
-                this.logger.log('StreamingAPI', 'Step 3 streaming started');
+                this.logger.log('StreamingAPI', 'Step 3 - starting to read SSE stream');
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
+                let buffer = '';
+                let chunkCount = 0;
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    
-                    if (done) {
-                        this.logger.log('StreamingAPI', 'Step 3 streaming completed');
-                        if (onComplete) await onComplete();
-                        break;
-                    }
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        
+                        if (done) {
+                            this.logger.log('StreamingAPI', 'Step 3 - stream ended', { totalChunks: chunkCount });
+                            break;
+                        }
 
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n');
+                        // Reset activity timeout on each chunk
+                        this.resetActivityTimeout();
 
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.substring(6);
+                        const chunk = decoder.decode(value, { stream: true });
+                        buffer += chunk;
+
+                        // Process complete lines
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                        for (const line of lines) {
+                            const trimmedLine = line.trim();
                             
-                            if (data === '[DONE]') {
-                                continue;
-                            }
-
-                            try {
-                                const parsed = JSON.parse(data);
+                            if (trimmedLine.startsWith('data: ')) {
+                                const jsonStr = trimmedLine.slice(6); // Remove 'data: '
                                 
-                                if (parsed.choices && parsed.choices[0]) {
-                                    const choice = parsed.choices[0];
+                                if (jsonStr === '[DONE]') {
+                                    this.logger.log('StreamingAPI', 'Step 3 - received [DONE] marker');
+                                    onComplete();
+                                    return;
+                                }
+
+                                try {
+                                    const data = JSON.parse(jsonStr);
+                                    chunkCount++;
                                     
-                                    if (choice.finish_reason === 'stop') {
-                                        continue;
-                                    }
-                                    
-                                    if (choice.delta && choice.delta.content) {
-                                        if (onChunk) {
+                                    this.logger.log('StreamingAPI', `Step 3 - chunk ${chunkCount}`, { 
+                                        hasChoices: !!data.choices,
+                                        choiceCount: data.choices?.length || 0
+                                    });
+
+                                    if (data.choices && data.choices.length > 0) {
+                                        const choice = data.choices[0];
+                                        
+                                        if (choice.finish_reason === 'stop') {
+                                            this.logger.log('StreamingAPI', 'Step 3 - received finish_reason: stop');
+                                            onComplete();
+                                            return;
+                                        }
+                                        
+                                        if (choice.delta && choice.delta.content) {
+                                            this.logger.log('StreamingAPI', `Step 3 - content chunk: "${choice.delta.content.substring(0, 50)}..."`);
                                             onChunk(choice.delta.content);
                                         }
                                     }
+                                    
+                                } catch (parseError) {
+                                    this.logger.warn('StreamingAPI', 'Step 3 - failed to parse chunk', { 
+                                        jsonStr: jsonStr.substring(0, 100),
+                                        error: parseError.message 
+                                    });
                                 }
-                            } catch (e) {
-                                this.logger.warn('StreamingAPI', 'Failed to parse streaming data', { 
-                                    data: data.substring(0, 100) 
-                                });
                             }
                         }
+                    }
+
+                    // If we reach here, the stream ended without [DONE] or finish_reason
+                    this.logger.log('StreamingAPI', 'Step 3 - stream ended naturally');
+                    onComplete();
+
+                } catch (streamError) {
+                    this.logger.error('StreamingAPI', 'Step 3 - stream reading failed', streamError);
+                    onError(streamError);
+                } finally {
+                    try {
+                        reader.releaseLock();
+                    } catch (e) {
+                        // Ignore lock release errors
                     }
                 }
 
             } catch (error) {
                 this.logger.error('StreamingAPI', 'Step 3 failed', error);
-                if (onError) onError(error);
-                throw error;
+                onError(error);
             } finally {
                 this.clearActivityTimeout();
             }
         }
 
-        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk = null, onComplete = null, onError = null, onProgress = null) {
-            this.logger.log('StreamingAPI', 'Starting 3-step flow', { 
-                hasExistingConversation: !!existingConversationId,
+        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk, onComplete, onError, onProgress = null) {
+            const isNewConversation = !existingConversationId;
+            
+            this.logger.log('StreamingAPI', 'Starting message flow', { 
+                userMessage: userMessage.substring(0, 50) + '...',
+                isNewConversation,
+                existingConversationId,
                 historyLength: conversationHistory.length
             });
 
             try {
-                let conversationId = existingConversationId;
-                let messages = [...conversationHistory, { role: 'user', content: userMessage }];
-
-                // Step 1: Create conversation (only if new)
-                if (!conversationId) {
+                let conversationId;
+                let step2Result;
+                
+                if (isNewConversation) {
+                    this.logger.log('StreamingAPI', 'NEW CONVERSATION: Running Step 1 + Step 2');
+                    
+                    // Step 1: Create conversation
+                    if (onProgress) onProgress(1, 4, 'Creating conversation...');
                     const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
                     conversationId = step1Result.conversationId;
+                    
+                    // Step 2: Add assistant message slot (no GET needed)
+                    if (onProgress) onProgress(2, 4, 'Adding assistant message slot...');
+                    step2Result = await this.step2AddAssistantSlot(
+                        step1Result.conversationId,
+                        step1Result.payload
+                    );
+                } else {
+                    this.logger.log('StreamingAPI', 'EXISTING CONVERSATION: Running Step 2 only');
+                    conversationId = existingConversationId;
+                    
+                    // For existing conversations, we need to get current state and add messages
+                    this.logger.log('StreamingAPI', 'Getting existing conversation for continuation');
+                    const getUrl = `${this.config.GET_CHAT_ENDPOINT}${conversationId}`;
+                    
+                    const getResponse = await fetch(getUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${this.token}`
+                        }
+                    });
+
+                    if (!getResponse.ok) {
+                        throw new Error(`Failed to get existing conversation: ${getResponse.status} ${getResponse.statusText}`);
+                    }
+
+                    const conversationData = await getResponse.json();
+                    
+                    // Create a step1-like payload from the existing conversation + new user message
+                    const userMessageId = this.utils.generateUUID();
+                    const timestamp10 = this.utils.get10DigitTimestamp();
+                    const lastMessage = conversationData.chat.messages[conversationData.chat.messages.length - 1];
+
+                    const newUserMessage = {
+                        childrenIds: [],
+                        content: userMessage,
+                        id: userMessageId,
+                        models: ["Anthropic Claude 4 Sonnet"],
+                        parentId: lastMessage ? lastMessage.id : null,
+                        role: "user",
+                        timestamp: timestamp10
+                    };
+
+                    // Add user message to conversation
+                    conversationData.chat.messages.push(newUserMessage);
+                    conversationData.chat.history.messages[userMessageId] = newUserMessage;
+                    conversationData.chat.history.currentId = userMessageId;
+
+                    // Update parent's children
+                    if (lastMessage && conversationData.chat.history.messages[lastMessage.id]) {
+                        if (!conversationData.chat.history.messages[lastMessage.id].childrenIds) {
+                            conversationData.chat.history.messages[lastMessage.id].childrenIds = [];
+                        }
+                        conversationData.chat.history.messages[lastMessage.id].childrenIds.push(userMessageId);
+                    }
+
+                    step2Result = await this.step2AddAssistantSlot(conversationId, { chat: conversationData.chat });
                 }
-
-                // Step 2: Add assistant message slot
-                const step2Result = await this.step2AddAssistantMessage(conversationId);
-
-                // Step 3: Stream completions
-                await this.step3StreamCompletions(
+                
+                // Step 3: Stream response (same for both flows)
+                const allMessages = [
+                    ...conversationHistory,
+                    { role: 'user', content: userMessage }
+                ];
+                
+                if (isNewConversation) {
+                    if (onProgress) onProgress(3, 4, 'Starting response stream...');
+                } else {
+                    if (onProgress) onProgress(2, 2, 'Starting response stream...');
+                }
+                
+                await this.step3StreamResponse(
                     conversationId,
                     step2Result.assistantMessageId,
-                    messages,
-                    onChunk,
+                    allMessages,
+                    (chunk) => {
+                        // Clear progress on first chunk
+                        if (onProgress) onProgress(null);
+                        onChunk(chunk);
+                    },
                     onComplete,
-                    onError,
-                    onProgress
+                    onError
                 );
 
+                // Return conversation ID for new conversations
                 return { conversationId };
 
             } catch (error) {
-                this.logger.error('StreamingAPI', '3-step flow failed', error);
-                if (onError) onError(error);
-                throw error;
+                this.logger.error('StreamingAPI', 'Complete message flow failed', error);
+                onError(error);
             }
         }
     }
