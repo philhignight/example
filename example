@@ -3,6 +3,39 @@
 
     // Page replacement will eliminate notification popups entirely
     
+    // Override fetch to block requests not from our app
+    function blockNonAppRequests() {
+        const originalFetch = window.fetch;
+        const APP_ENDPOINTS = [
+            '/api/v1/chats/new',
+            '/api/v1/chats/',
+            '/api/chat/completions'
+        ];
+        
+        window.fetch = function(url, options = {}) {
+            // Check if this request is from our app
+            const isAppRequest = APP_ENDPOINTS.some(endpoint => {
+                if (typeof url === 'string') {
+                    return url.includes(endpoint);
+                } else if (url && url.href) {
+                    return url.href.includes(endpoint);
+                }
+                return false;
+            });
+            
+            if (isAppRequest) {
+                Logger.log('FetchBlock', 'Allowing app request', { url: url.toString() });
+                return originalFetch.call(this, url, options);
+            } else {
+                Logger.log('FetchBlock', 'Blocking non-app request', { url: url.toString() });
+                // Return a rejected promise to block the request
+                return Promise.reject(new Error('Request blocked: not from streaming chat app'));
+            }
+        };
+        
+        Logger.log('FetchBlock', 'Fetch blocking enabled - only app requests allowed');
+    }
+    
     // Configuration
     const CONFIG = {
         STORAGE_KEY: 'ai_chat_overlay_streaming_data',
@@ -561,7 +594,7 @@
                 },
                 chat_id: conversationId,
                 features: {
-                    web_search: false
+                    web_search: true
                 },
                 id: assistantMessageId,
                 messages: simplifiedMessages,
@@ -697,7 +730,7 @@
             }
         }
 
-        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk, onComplete, onError) {
+        async sendMessage(userMessage, conversationHistory = [], existingConversationId = null, onChunk, onComplete, onError, onProgress = null) {
             const isNewConversation = !existingConversationId;
             
             Logger.log('StreamingAPI', 'Starting message flow', { 
@@ -713,11 +746,14 @@
                 
                 if (isNewConversation) {
                     Logger.log('StreamingAPI', 'NEW CONVERSATION: Running Step 1 + Step 2');
+                    
                     // Step 1: Create conversation
+                    if (onProgress) onProgress(1, 4, 'Creating conversation...');
                     const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
                     conversationId = step1Result.conversationId;
                     
                     // Step 2: Add assistant message slot (no GET needed)
+                    if (onProgress) onProgress(2, 4, 'Adding assistant message slot...');
                     step2Result = await this.step2AddAssistantSlot(
                         step1Result.conversationId,
                         step1Result.payload
@@ -727,6 +763,7 @@
                     conversationId = existingConversationId;
                     
                     // Step 2: Add assistant slot to existing conversation with full history
+                    if (onProgress) onProgress(1, 2, 'Adding message to conversation...');
                     step2Result = await this.step2AddAssistantSlotToExistingConversation(
                         existingConversationId,
                         userMessage,
@@ -740,11 +777,21 @@
                     { role: 'user', content: userMessage }
                 ];
                 
+                if (isNewConversation) {
+                    if (onProgress) onProgress(3, 4, 'Starting response stream...');
+                } else {
+                    if (onProgress) onProgress(2, 2, 'Starting response stream...');
+                }
+                
                 await this.step3StreamResponse(
                     conversationId,
                     step2Result.assistantMessageId,
                     allMessages,
-                    onChunk,
+                    (chunk) => {
+                        // Clear progress on first chunk
+                        if (onProgress) onProgress(null);
+                        onChunk(chunk);
+                    },
                     onComplete,
                     onError
                 );
@@ -1040,6 +1087,12 @@
                 border-left: 3px solid #ffa726;
             }
 
+            .message.progress {
+                border-left: 3px solid #2196f3;
+                font-style: italic;
+                opacity: 0.8;
+            }
+
             .input-area {
                 padding: 15px 20px;
                 background: #2d2d2d;
@@ -1160,6 +1213,9 @@
         async init() {
             Logger.log('App', 'Starting initialization');
             
+            // Block non-app requests first
+            blockNonAppRequests();
+            
             // Replace entire page with our UI
             this.container = replacePageWithStreamingUI();
             this.bindElements();
@@ -1273,8 +1329,21 @@
             return messageEl;
         }
 
-        updateStatus(text, type = '') {
-            this.elements.status.textContent = text;
+        createProgressMessage() {
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message assistant progress';
+            messageEl.textContent = 'Starting...';
+            this.elements.messages.appendChild(messageEl);
+            this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+            return messageEl;
+        }
+
+        updateStatus(text, type = '', progress = null) {
+            let statusText = text;
+            if (progress) {
+                statusText = `${text} (${progress.current}/${progress.total})`;
+            }
+            this.elements.status.textContent = statusText;
             this.elements.status.className = `status ${type}`;
         }
 
@@ -1316,9 +1385,11 @@
                     this.updateMessages();
                     input.value = '';
                     
-                    // Create streaming message element
-                    this.currentStreamingMessage = this.createStreamingMessage();
-                    this.updateStatus('Creating conversation...', 'streaming');
+                    // Create progress message element
+                    this.currentStreamingMessage = this.createProgressMessage();
+                    
+                    // Initial status
+                    this.updateStatus('Processing...', 'streaming');
                 }
                 
                 // Get conversation history and existing conversation ID
@@ -1382,7 +1453,22 @@
                         } else {
                             Logger.error('Heartbeat', 'Heartbeat failed', error);
                         }
-                    }
+                    },
+                    // onProgress
+                    !isHeartbeat ? (current, total, message) => {
+                        if (current === null) {
+                            // Replace progress message with streaming message
+                            if (this.currentStreamingMessage && this.currentStreamingMessage.classList.contains('progress')) {
+                                this.currentStreamingMessage.remove();
+                                this.currentStreamingMessage = this.createStreamingMessage();
+                            }
+                            this.updateStatus('Streaming response...', 'streaming');
+                        } else if (this.currentStreamingMessage) {
+                            // Update progress message
+                            this.currentStreamingMessage.textContent = `${message} (${current}/${total})`;
+                            this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+                        }
+                    } : null
                 );
                 
                 // Save conversation ID for new conversations (after await completes)
