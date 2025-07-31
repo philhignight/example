@@ -3,10 +3,15 @@
 
     // Configuration
     const CONFIG = {
-        STORAGE_KEY: 'ai_chat_overlay_direct_data',
+        STORAGE_KEY: 'ai_chat_overlay_streaming_data',
         HEARTBEAT_INTERVAL: 60000, // 60 seconds
         HEARTBEAT_MESSAGE: 'respond "k"',
-        API_ENDPOINT: '/api/v1/chats/new' // Relative URL so browser handles auth
+        OVERALL_TIMEOUT: 10 * 60 * 1000, // 10 minutes
+        POLLING_INTERVAL: 1000, // 1 second
+        SESSION_ID: '11111111111111111111', // 20 ones
+        NEW_CHAT_ENDPOINT: '/api/v1/chats/new',
+        GET_CHAT_ENDPOINT: '/api/v1/chats/',
+        COMPLETIONS_ENDPOINT: '/api/chat/completions'
     };
 
     // Logging utility
@@ -47,19 +52,20 @@
         }
     };
 
-    // Direct API Manager - No UI automation needed
-    class DirectAPIManager {
+    // Streaming API Manager - 3-step flow
+    class StreamingAPIManager {
         constructor() {
-            Logger.log('DirectAPI', 'Initializing Direct API Manager');
+            Logger.log('StreamingAPI', 'Initializing Streaming API Manager');
             this.token = this.getAuthToken();
             this.isReady = !!this.token;
+            this.activityTimeout = null;
             
             if (this.token) {
-                Logger.log('DirectAPI', 'Auth token found', { 
+                Logger.log('StreamingAPI', 'Auth token found', { 
                     tokenPreview: this.token.substring(0, 20) + '...' 
                 });
             } else {
-                Logger.error('DirectAPI', 'No auth token found in localStorage');
+                Logger.error('StreamingAPI', 'No auth token found in localStorage');
             }
         }
 
@@ -68,7 +74,7 @@
                 const token = localStorage.getItem('token');
                 return token;
             } catch (e) {
-                Logger.error('DirectAPI', 'Failed to retrieve auth token', e);
+                Logger.error('StreamingAPI', 'Failed to retrieve auth token', e);
                 return null;
             }
         }
@@ -81,7 +87,7 @@
             }
             
             if (currentToken !== this.token) {
-                Logger.log('DirectAPI', 'Auth token updated');
+                Logger.log('StreamingAPI', 'Auth token updated');
                 this.token = currentToken;
             }
             
@@ -89,8 +95,26 @@
             return true;
         }
 
-        createPayload(userMessage, conversationHistory = []) {
-            Logger.log('DirectAPI', 'Creating API payload', { 
+        resetActivityTimeout() {
+            if (this.activityTimeout) {
+                clearTimeout(this.activityTimeout);
+            }
+            
+            this.activityTimeout = setTimeout(() => {
+                Logger.error('StreamingAPI', 'Overall timeout reached - 10 minutes of no activity');
+                throw new Error('Request timeout - 10 minutes of no activity');
+            }, CONFIG.OVERALL_TIMEOUT);
+        }
+
+        clearActivityTimeout() {
+            if (this.activityTimeout) {
+                clearTimeout(this.activityTimeout);
+                this.activityTimeout = null;
+            }
+        }
+
+        createStep1Payload(userMessage, conversationHistory = []) {
+            Logger.log('StreamingAPI', 'Creating Step 1 payload', { 
                 messageLength: userMessage.length,
                 historyLength: conversationHistory.length
             });
@@ -99,8 +123,8 @@
             const timestamp10 = Utils.get10DigitTimestamp();
             const messageId = Utils.generateUUID();
             
-            // Create the message object
-            const messageObj = {
+            // Create the user message object
+            const userMessageObj = {
                 childrenIds: [],
                 content: userMessage,
                 id: messageId,
@@ -111,7 +135,7 @@
             };
             
             // Start with current message
-            const messages = [messageObj];
+            const messages = [userMessageObj];
             
             // Add conversation history if provided
             conversationHistory.forEach(historyMsg => {
@@ -121,7 +145,7 @@
                     content: historyMsg.content,
                     id: historyMsgId,
                     models: ["Anthropic Claude 4 Sonnet"],
-                    parentId: null,
+                    parentId: historyMsg.role === 'assistant' ? messages[messages.length - 2]?.id || null : null,
                     role: historyMsg.role,
                     timestamp: timestamp10
                 });
@@ -149,30 +173,27 @@
                 }
             };
 
-            Logger.log('DirectAPI', 'Payload created successfully', {
-                messageId,
-                timestamp13,
-                timestamp10
-            });
-
+            Logger.log('StreamingAPI', 'Step 1 payload created', { messageId, timestamp13 });
             return payload;
         }
 
-        async sendMessage(userMessage, conversationHistory = []) {
-            Logger.log('DirectAPI', 'Sending direct API call', { 
-                userMessage: userMessage.substring(0, 50) + '...'
-            });
-
-            // Check auth token before sending
+        async step1CreateConversation(userMessage, conversationHistory = []) {
+            Logger.log('StreamingAPI', 'STEP 1: Creating conversation');
+            
             if (!this.checkAuthToken()) {
-                throw new Error('No authentication token available. Please log in.');
+                throw new Error('No authentication token available');
             }
 
+            this.resetActivityTimeout();
+
             try {
-                const payload = this.createPayload(userMessage, conversationHistory);
+                const payload = this.createStep1Payload(userMessage, conversationHistory);
                 
-                // Make direct API call with Bearer token
-                const response = await fetch(CONFIG.API_ENDPOINT, {
+                Logger.log('StreamingAPI', 'Sending Step 1 request', { 
+                    endpoint: CONFIG.NEW_CHAT_ENDPOINT 
+                });
+
+                const response = await fetch(CONFIG.NEW_CHAT_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -181,27 +202,299 @@
                     body: JSON.stringify(payload)
                 });
 
-                Logger.log('DirectAPI', 'API response received', { 
+                Logger.log('StreamingAPI', 'Step 1 response received', { 
                     status: response.status,
                     statusText: response.statusText
                 });
 
                 if (response.status === 401) {
                     throw new Error('Authentication failed. Token may be expired.');
-                } else if (response.status === 403) {
-                    throw new Error('Access denied. Check your permissions.');
                 } else if (!response.ok) {
-                    throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+                    throw new Error(`Step 1 failed: ${response.status} ${response.statusText}`);
                 }
 
                 const responseData = await response.json();
-                Logger.log('DirectAPI', 'Message sent successfully', responseData);
+                Logger.log('StreamingAPI', 'Step 1 successful', { 
+                    conversationId: responseData.id,
+                    userId: responseData.user_id || 'not provided'
+                });
 
-                return responseData;
+                return {
+                    conversationId: responseData.id,
+                    userId: responseData.user_id,
+                    userMessageId: payload.chat.messages[0].id
+                };
 
             } catch (error) {
-                Logger.error('DirectAPI', 'Failed to send message', error);
+                this.clearActivityTimeout();
+                Logger.error('StreamingAPI', 'Step 1 failed', error);
                 throw error;
+            }
+        }
+
+        async step2PollForAssistantMessage(conversationId, expectedUserMessageId) {
+            Logger.log('StreamingAPI', 'STEP 2: Polling for assistant message', { 
+                conversationId,
+                expectedUserMessageId 
+            });
+
+            const startTime = Date.now();
+            let attempts = 0;
+
+            while (Date.now() - startTime < CONFIG.OVERALL_TIMEOUT) {
+                attempts++;
+                Logger.log('StreamingAPI', `Step 2 polling attempt ${attempts}`);
+
+                try {
+                    const response = await fetch(`${CONFIG.GET_CHAT_ENDPOINT}${conversationId}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${this.token}`
+                        }
+                    });
+
+                    Logger.log('StreamingAPI', 'Step 2 response received', { 
+                        status: response.status,
+                        attempt: attempts
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Step 2 polling failed: ${response.status} ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    Logger.log('StreamingAPI', 'Step 2 data received', { 
+                        messageCount: data.chat?.messages?.length || 0,
+                        hasAssistantMessage: data.chat?.messages?.some(msg => msg.role === 'assistant') || false
+                    });
+
+                    // Look for assistant message that wasn't in our original request
+                    const assistantMessage = data.chat?.messages?.find(msg => 
+                        msg.role === 'assistant' && msg.id !== expectedUserMessageId
+                    );
+
+                    if (assistantMessage) {
+                        Logger.log('StreamingAPI', 'Step 2 successful - assistant message found', { 
+                            assistantMessageId: assistantMessage.id,
+                            attempts,
+                            elapsedMs: Date.now() - startTime
+                        });
+
+                        return {
+                            assistantMessageId: assistantMessage.id,
+                            conversationData: data
+                        };
+                    }
+
+                    Logger.log('StreamingAPI', 'Step 2 - no assistant message yet, waiting...', { 
+                        nextPollIn: CONFIG.POLLING_INTERVAL 
+                    });
+
+                    // Wait before next poll
+                    await new Promise(resolve => setTimeout(resolve, CONFIG.POLLING_INTERVAL));
+
+                } catch (error) {
+                    Logger.error('StreamingAPI', `Step 2 polling attempt ${attempts} failed`, error);
+                    
+                    // Wait before retrying
+                    await new Promise(resolve => setTimeout(resolve, CONFIG.POLLING_INTERVAL));
+                }
+            }
+
+            // Timeout reached
+            this.clearActivityTimeout();
+            throw new Error('Step 2 timeout - assistant message never appeared');
+        }
+
+        createStep3Payload(conversationId, assistantMessageId, messages) {
+            Logger.log('StreamingAPI', 'Creating Step 3 payload', { 
+                conversationId,
+                assistantMessageId,
+                messageCount: messages.length 
+            });
+
+            // Convert messages to simplified format (content + role only)
+            const simplifiedMessages = messages.map(msg => ({
+                content: msg.content,
+                role: msg.role
+            }));
+
+            const payload = {
+                background_tasks: {
+                    title_generation: true,
+                    tags_generation: true
+                },
+                chat_id: conversationId,
+                features: {
+                    web_search: false
+                },
+                id: assistantMessageId,
+                messages: simplifiedMessages,
+                model: "Anthropic Claude 4 Sonnet",
+                params: {},
+                session_id: CONFIG.SESSION_ID,
+                stream: true
+            };
+
+            Logger.log('StreamingAPI', 'Step 3 payload created', { 
+                simplifiedMessageCount: simplifiedMessages.length 
+            });
+
+            return payload;
+        }
+
+        async step3StreamResponse(conversationId, assistantMessageId, messages, onChunk, onComplete, onError) {
+            Logger.log('StreamingAPI', 'STEP 3: Starting response stream', { 
+                conversationId,
+                assistantMessageId 
+            });
+
+            try {
+                const payload = this.createStep3Payload(conversationId, assistantMessageId, messages);
+
+                Logger.log('StreamingAPI', 'Sending Step 3 request', { 
+                    endpoint: CONFIG.COMPLETIONS_ENDPOINT 
+                });
+
+                const response = await fetch(CONFIG.COMPLETIONS_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                Logger.log('StreamingAPI', 'Step 3 response received', { 
+                    status: response.status,
+                    statusText: response.statusText
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Step 3 failed: ${response.status} ${response.statusText}`);
+                }
+
+                if (!response.body) {
+                    throw new Error('Step 3 - no response body for streaming');
+                }
+
+                Logger.log('StreamingAPI', 'Step 3 - starting to read SSE stream');
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let chunkCount = 0;
+
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        
+                        if (done) {
+                            Logger.log('StreamingAPI', 'Step 3 - stream ended', { totalChunks: chunkCount });
+                            break;
+                        }
+
+                        // Reset activity timeout on each chunk
+                        this.resetActivityTimeout();
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        buffer += chunk;
+
+                        // Process complete lines
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                        for (const line of lines) {
+                            const trimmedLine = line.trim();
+                            
+                            if (trimmedLine.startsWith('data: ')) {
+                                const jsonStr = trimmedLine.slice(6); // Remove 'data: '
+                                
+                                if (jsonStr === '[DONE]') {
+                                    Logger.log('StreamingAPI', 'Step 3 - received [DONE] marker');
+                                    onComplete();
+                                    return;
+                                }
+
+                                try {
+                                    const data = JSON.parse(jsonStr);
+                                    chunkCount++;
+                                    
+                                    Logger.log('StreamingAPI', `Step 3 - chunk ${chunkCount}`, { 
+                                        hasChoices: !!data.choices,
+                                        choiceCount: data.choices?.length || 0
+                                    });
+
+                                    if (data.choices && data.choices.length > 0) {
+                                        const choice = data.choices[0];
+                                        
+                                        if (choice.finish_reason === 'stop') {
+                                            Logger.log('StreamingAPI', 'Step 3 - received finish_reason: stop');
+                                            onComplete();
+                                            return;
+                                        }
+                                        
+                                        if (choice.delta && choice.delta.content) {
+                                            Logger.log('StreamingAPI', `Step 3 - content chunk: "${choice.delta.content.substring(0, 50)}..."`);
+                                            onChunk(choice.delta.content);
+                                        }
+                                    }
+                                    
+                                } catch (parseError) {
+                                    Logger.warn('StreamingAPI', 'Step 3 - failed to parse chunk', { 
+                                        jsonStr: jsonStr.substring(0, 100),
+                                        error: parseError.message 
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                } finally {
+                    reader.releaseLock();
+                    this.clearActivityTimeout();
+                }
+
+            } catch (error) {
+                this.clearActivityTimeout();
+                Logger.error('StreamingAPI', 'Step 3 failed', error);
+                onError(error);
+            }
+        }
+
+        async sendMessage(userMessage, conversationHistory = [], onChunk, onComplete, onError) {
+            Logger.log('StreamingAPI', 'Starting complete 3-step message flow', { 
+                userMessage: userMessage.substring(0, 50) + '...' 
+            });
+
+            try {
+                // Step 1: Create conversation
+                const step1Result = await this.step1CreateConversation(userMessage, conversationHistory);
+                
+                // Step 2: Poll for assistant message
+                const step2Result = await this.step2PollForAssistantMessage(
+                    step1Result.conversationId, 
+                    step1Result.userMessageId
+                );
+                
+                // Step 3: Stream response
+                const allMessages = [
+                    ...conversationHistory,
+                    { role: 'user', content: userMessage }
+                ];
+                
+                await this.step3StreamResponse(
+                    step1Result.conversationId,
+                    step2Result.assistantMessageId,
+                    allMessages,
+                    onChunk,
+                    onComplete,
+                    onError
+                );
+
+            } catch (error) {
+                Logger.error('StreamingAPI', 'Complete message flow failed', error);
+                onError(error);
             }
         }
     }
@@ -276,35 +569,35 @@
     }
 
     // UI Creation
-    function createDirectAPIUI() {
-        const existing = document.getElementById('ai-chat-overlay-direct');
+    function createStreamingUI() {
+        const existing = document.getElementById('ai-chat-overlay-streaming');
         if (existing) existing.remove();
 
         const overlay = document.createElement('div');
-        overlay.id = 'ai-chat-overlay-direct';
+        overlay.id = 'ai-chat-overlay-streaming';
         overlay.innerHTML = `
             <div class="chat-container">
                 <div class="chat-header">
-                    <h1>AI Chat (Direct API)</h1>
+                    <h1>AI Chat (Streaming)</h1>
                     <div class="header-controls">
-                        <button id="new-chat-direct" class="btn">New Chat</button>
-                        <button id="close-overlay-direct" class="btn btn-danger">×</button>
+                        <button id="new-chat-streaming" class="btn">New Chat</button>
+                        <button id="close-overlay-streaming" class="btn btn-danger">×</button>
                     </div>
                 </div>
                 
                 <div class="chat-content">
                     <div class="sidebar">
                         <h3>Previous Chats</h3>
-                        <div id="chat-list-direct" class="chat-list"></div>
+                        <div id="chat-list-streaming" class="chat-list"></div>
                     </div>
                     
                     <div class="main-chat">
-                        <div id="messages-direct" class="messages"></div>
+                        <div id="messages-streaming" class="messages"></div>
                         <div class="input-area">
-                            <textarea id="user-input-direct" placeholder="Type your message..." rows="3"></textarea>
-                            <button id="send-btn-direct" class="btn btn-primary">Send</button>
+                            <textarea id="user-input-streaming" placeholder="Type your message..." rows="3"></textarea>
+                            <button id="send-btn-streaming" class="btn btn-primary">Send</button>
                         </div>
-                        <div id="status-direct" class="status">Ready - Direct API calls</div>
+                        <div id="status-streaming" class="status">Ready - Streaming API</div>
                     </div>
                 </div>
             </div>
@@ -313,7 +606,7 @@
         // Add CSS styling
         const style = document.createElement('style');
         style.textContent = `
-            #ai-chat-overlay-direct {
+            #ai-chat-overlay-streaming {
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -437,6 +730,10 @@
                 border: 1px solid #444;
             }
 
+            .message.streaming {
+                border-left: 3px solid #ffa726;
+            }
+
             .input-area {
                 padding: 15px 20px;
                 background: #2d2d2d;
@@ -446,7 +743,7 @@
                 align-items: flex-end;
             }
 
-            #user-input-direct {
+            #user-input-streaming {
                 flex: 1;
                 background: #1a1a1a;
                 border: 1px solid #444;
@@ -459,7 +756,7 @@
                 min-height: 60px;
             }
 
-            #user-input-direct:focus {
+            #user-input-streaming:focus {
                 outline: none;
                 border-color: #0d7377;
             }
@@ -528,6 +825,10 @@
             .status.ready {
                 color: #4caf50;
             }
+
+            .status.streaming {
+                color: #ffa726;
+            }
         `;
 
         document.head.appendChild(style);
@@ -537,28 +838,29 @@
     }
 
     // Main App
-    class DirectAPIChatApp {
+    class StreamingChatApp {
         constructor() {
-            Logger.log('App', 'Initializing Direct API Chat App');
-            this.apiManager = new DirectAPIManager();
+            Logger.log('App', 'Initializing Streaming Chat App');
+            this.apiManager = new StreamingAPIManager();
             this.chatManager = new ChatManager();
             this.overlay = null;
             this.elements = {};
             this.lastActivityTime = Date.now();
             this.heartbeatTimer = null;
+            this.currentStreamingMessage = null;
         }
 
         async init() {
             Logger.log('App', 'Starting initialization');
             
             // Create UI
-            this.overlay = createDirectAPIUI();
+            this.overlay = createStreamingUI();
             this.bindElements();
             this.bindEvents();
             
-            // Check if we have authentication
+            // Check authentication
             if (this.apiManager.isReady) {
-                this.updateStatus('Ready - Direct API calls', 'ready');
+                this.updateStatus('Ready - Streaming API', 'ready');
                 this.updateUI();
                 this.startHeartbeat();
                 Logger.log('App', 'Initialization complete');
@@ -571,13 +873,13 @@
 
         bindElements() {
             this.elements = {
-                newChatBtn: document.getElementById('new-chat-direct'),
-                closeBtn: document.getElementById('close-overlay-direct'),
-                chatList: document.getElementById('chat-list-direct'),
-                messages: document.getElementById('messages-direct'),
-                userInput: document.getElementById('user-input-direct'),
-                sendBtn: document.getElementById('send-btn-direct'),
-                status: document.getElementById('status-direct')
+                newChatBtn: document.getElementById('new-chat-streaming'),
+                closeBtn: document.getElementById('close-overlay-streaming'),
+                chatList: document.getElementById('chat-list-streaming'),
+                messages: document.getElementById('messages-streaming'),
+                userInput: document.getElementById('user-input-streaming'),
+                sendBtn: document.getElementById('send-btn-streaming'),
+                status: document.getElementById('status-streaming')
             };
         }
 
@@ -655,6 +957,15 @@
             messages.scrollTop = messages.scrollHeight;
         }
 
+        createStreamingMessage() {
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message assistant streaming';
+            messageEl.textContent = '';
+            this.elements.messages.appendChild(messageEl);
+            this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+            return messageEl;
+        }
+
         updateStatus(text, type = '') {
             this.elements.status.textContent = text;
             this.elements.status.className = `status ${type}`;
@@ -664,7 +975,7 @@
             const input = this.elements.userInput;
             let message;
             
-            // Check authentication before sending
+            // Check authentication
             if (!this.apiManager.checkAuthToken()) {
                 if (!isHeartbeat) {
                     this.updateStatus('Authentication required - No token found', 'error');
@@ -693,44 +1004,81 @@
 
             try {
                 if (!isHeartbeat) {
+                    // Add user message immediately
                     this.chatManager.addMessage('user', message);
                     this.updateMessages();
                     input.value = '';
-                    this.updateStatus('Sending message via direct API...', 'processing');
+                    
+                    // Create streaming message element
+                    this.currentStreamingMessage = this.createStreamingMessage();
+                    this.updateStatus('Creating conversation...', 'streaming');
                 }
                 
-                // Get conversation history for context
-                const conversationHistory = isHeartbeat ? [] : this.chatManager.getConversationHistory().slice(0, -1); // Exclude the message we just added
+                // Get conversation history
+                const conversationHistory = isHeartbeat ? [] : 
+                    this.chatManager.getConversationHistory().slice(0, -1); // Exclude the message we just added
                 
-                const response = await this.apiManager.sendMessage(message, conversationHistory);
+                let streamContent = '';
                 
-                if (response) {
-                    if (isHeartbeat) {
-                        Logger.log('Heartbeat', 'Heartbeat sent successfully');
-                    } else {
-                        // TODO: Parse actual AI response from the API response
-                        this.chatManager.addMessage('assistant', `Response received (ID: ${response.id || 'unknown'})`);
-                        this.updateMessages();
-                        this.updateStatus('Message sent successfully', 'success');
+                await this.apiManager.sendMessage(
+                    message,
+                    conversationHistory,
+                    // onChunk
+                    (chunk) => {
+                        if (!isHeartbeat && this.currentStreamingMessage) {
+                            streamContent += chunk;
+                            this.currentStreamingMessage.textContent = streamContent;
+                            this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+                            this.updateStatus('Streaming response...', 'streaming');
+                        }
+                    },
+                    // onComplete
+                    () => {
+                        if (isHeartbeat) {
+                            Logger.log('Heartbeat', 'Heartbeat completed successfully');
+                        } else {
+                            Logger.log('App', 'Streaming completed');
+                            
+                            // Remove streaming indicator
+                            if (this.currentStreamingMessage) {
+                                this.currentStreamingMessage.classList.remove('streaming');
+                                this.currentStreamingMessage = null;
+                            }
+                            
+                            // Save the complete response
+                            if (streamContent) {
+                                this.chatManager.addMessage('assistant', streamContent);
+                            }
+                            
+                            this.updateStatus('Message completed', 'success');
+                        }
+                    },
+                    // onError
+                    (error) => {
+                        if (!isHeartbeat) {
+                            Logger.error('App', 'Streaming failed', error);
+                            
+                            // Remove streaming message on error
+                            if (this.currentStreamingMessage) {
+                                this.currentStreamingMessage.remove();
+                                this.currentStreamingMessage = null;
+                            }
+                            
+                            if (error.message.includes('Authentication') || error.message.includes('token')) {
+                                this.updateStatus('Authentication error - Please refresh and log in', 'error');
+                            } else {
+                                this.updateStatus(`Error: ${error.message}`, 'error');
+                            }
+                        } else {
+                            Logger.error('Heartbeat', 'Heartbeat failed', error);
+                        }
                     }
-                } else {
-                    if (!isHeartbeat) {
-                        this.updateStatus('Failed to send message', 'error');
-                    }
-                }
+                );
                 
             } catch (error) {
                 if (!isHeartbeat) {
-                    Logger.error('App', 'Failed to send message', error);
-                    
-                    // Check if it's an auth error and update UI accordingly
-                    if (error.message.includes('Authentication') || error.message.includes('token')) {
-                        this.updateStatus('Authentication error - Please refresh and log in', 'error');
-                    } else {
-                        this.updateStatus(`Error: ${error.message}`, 'error');
-                    }
-                } else {
-                    Logger.error('Heartbeat', 'Heartbeat failed', error);
+                    Logger.error('App', 'Send message failed', error);
+                    this.updateStatus(`Error: ${error.message}`, 'error');
                 }
             } finally {
                 if (!isHeartbeat) {
@@ -771,6 +1119,7 @@
         }
 
         close() {
+            this.apiManager.clearActivityTimeout();
             this.stopHeartbeat();
             if (this.overlay) {
                 this.overlay.remove();
@@ -778,14 +1127,14 @@
         }
     }
 
-    // Initialize the direct API app
-    Logger.log('Main', 'Loading Direct API AI Chat Overlay');
-    const app = new DirectAPIChatApp();
+    // Initialize the streaming app
+    Logger.log('Main', 'Loading Streaming AI Chat Overlay');
+    const app = new StreamingChatApp();
     app.init();
 
-    window.aiChatOverlayDirect = app;
+    window.aiChatOverlayStreaming = app;
 
-    Logger.log('Main', 'Direct API AI Chat Overlay loaded successfully');
-    console.log('Direct API AI Chat Overlay loaded! Access via window.aiChatOverlayDirect');
+    Logger.log('Main', 'Streaming AI Chat Overlay loaded successfully');
+    console.log('Streaming AI Chat Overlay loaded! Access via window.aiChatOverlayStreaming');
 
 })();
