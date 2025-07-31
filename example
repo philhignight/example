@@ -153,7 +153,7 @@
             
             // Add current user message
             const userMessageId = Utils.generateUUID();
-            const userMessage = {
+            const userMessageObj = {
                 childrenIds: [],
                 content: userMessage,
                 id: userMessageId,
@@ -171,7 +171,7 @@
                 }
             }
             
-            messages.push(userMessage);
+            messages.push(userMessageObj);
             
             // Create history object with messages keyed by ID
             const historyMessages = {};
