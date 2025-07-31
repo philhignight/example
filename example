@@ -1249,28 +1249,66 @@
         const container = document.createElement('div');
         container.id = 'ai-chat-interface';
         container.innerHTML = `
-            <div class="chat-container">
-                <div class="chat-header">
-                    <h1>AI Chat (Streaming)</h1>
+            <div class="app-container">
+                <div class="app-header">
+                    <div class="tabs">
+                        <button id="chat-tab" class="tab-btn active">Chat</button>
+                        <button id="projects-tab" class="tab-btn">Projects</button>
+                    </div>
                     <div class="header-controls">
-                        <button id="new-chat-streaming" class="btn">New Chat</button>
                         <button id="close-overlay-streaming" class="btn btn-danger">×</button>
                     </div>
                 </div>
                 
-                <div class="chat-content">
-                    <div class="sidebar">
-                        <h3>Previous Chats</h3>
-                        <div id="chat-list-streaming" class="chat-list"></div>
-                    </div>
-                    
-                    <div class="main-chat">
-                        <div id="messages-streaming" class="messages"></div>
-                        <div class="input-area">
-                            <textarea id="user-input-streaming" placeholder="Type your message..." rows="3"></textarea>
-                            <button id="send-btn-streaming" class="btn btn-primary">Send</button>
+                <!-- Chat Tab Content -->
+                <div id="chat-content" class="tab-content active">
+                    <div class="chat-container">
+                        <div class="chat-sidebar">
+                            <div class="sidebar-section">
+                                <h3>Previous Chats</h3>
+                                <button id="new-chat-streaming" class="btn btn-small">+ New Chat</button>
+                                <div id="chat-list-streaming" class="chat-list"></div>
+                            </div>
+                            <div class="sidebar-section">
+                                <h3>Active Projects</h3>
+                                <div id="active-projects-list" class="project-list"></div>
+                            </div>
                         </div>
-                        <div id="status-streaming" class="status">Ready - Streaming API</div>
+                        
+                        <div class="main-chat">
+                            <div id="messages-streaming" class="messages"></div>
+                            <div class="input-area">
+                                <textarea id="user-input-streaming" placeholder="Type your message..." rows="3"></textarea>
+                                <button id="send-btn-streaming" class="btn btn-primary">Send</button>
+                            </div>
+                            <div id="status-streaming" class="status">Ready - Streaming API</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Projects Tab Content -->
+                <div id="projects-content" class="tab-content">
+                    <div class="projects-container">
+                        <div class="projects-sidebar">
+                            <div class="sidebar-section">
+                                <h3>Projects</h3>
+                                <button id="new-project-btn" class="btn btn-small">+ New Project</button>
+                                <div id="projects-list" class="projects-list"></div>
+                            </div>
+                            <div class="sidebar-section" id="file-tree-section" style="display: none;">
+                                <h3>Files</h3>
+                                <button id="new-file-btn" class="btn btn-small">+ New File</button>
+                                <div id="file-tree" class="file-tree"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="main-projects">
+                            <div id="file-editor" class="file-editor">
+                                <div class="editor-placeholder">
+                                    Select a project and file to start editing
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1305,14 +1343,13 @@
                 flex-direction: column;
             }
 
-            .chat-container {
+            .app-container {
                 display: flex;
                 flex-direction: column;
                 height: 100%;
-                max-width: 100%;
             }
 
-            .chat-header {
+            .app-header {
                 background: #2d2d2d;
                 padding: 15px 20px;
                 border-bottom: 1px solid #444;
@@ -1321,10 +1358,32 @@
                 align-items: center;
             }
 
-            .chat-header h1 {
-                margin: 0;
-                font-size: 18px;
-                font-weight: normal;
+            .tabs {
+                display: flex;
+                gap: 2px;
+            }
+
+            .tab-btn {
+                background: #333;
+                border: 1px solid #555;
+                color: #ccc;
+                padding: 8px 16px;
+                cursor: pointer;
+                font-family: inherit;
+                font-size: 14px;
+                border-radius: 4px 4px 0 0;
+                transition: all 0.2s;
+            }
+
+            .tab-btn:hover {
+                background: #3a3a3a;
+                color: #e0e0e0;
+            }
+
+            .tab-btn.active {
+                background: #1a1a1a;
+                color: #e0e0e0;
+                border-bottom-color: #1a1a1a;
             }
 
             .header-controls {
@@ -1332,25 +1391,54 @@
                 gap: 10px;
             }
 
-            .chat-content {
+            .tab-content {
+                display: none;
+                flex: 1;
+                overflow: hidden;
+            }
+
+            .tab-content.active {
+                display: flex;
+                flex-direction: column;
+            }
+
+            .chat-container, .projects-container {
                 display: flex;
                 flex: 1;
                 overflow: hidden;
             }
 
-            .sidebar {
-                width: 250px;
+            .chat-sidebar, .projects-sidebar {
+                width: 280px;
                 background: #252525;
                 border-right: 1px solid #444;
-                padding: 15px;
                 overflow-y: auto;
+                display: flex;
+                flex-direction: column;
             }
 
-            .sidebar h3 {
-                margin: 0 0 15px 0;
+            .sidebar-section {
+                padding: 15px;
+                border-bottom: 1px solid #333;
+            }
+
+            .sidebar-section:last-child {
+                border-bottom: none;
+                flex: 1;
+            }
+
+            .sidebar-section h3 {
+                margin: 0 0 10px 0;
                 font-size: 14px;
                 font-weight: normal;
                 color: #ccc;
+            }
+
+            .btn-small {
+                padding: 6px 12px;
+                font-size: 12px;
+                margin-bottom: 10px;
+                width: 100%;
             }
 
             .chat-list {
@@ -1420,8 +1508,25 @@
 
             .message.progress {
                 border-left: 3px solid #2196f3;
-                font-style: italic;
-                opacity: 0.8;
+                padding: 8px 16px;
+                min-height: 20px;
+                display: flex;
+                align-items: center;
+            }
+
+            .progress-bar-container {
+                width: 100%;
+                height: 8px;
+                background: #444;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+
+            .progress-bar-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #2196f3, #64b5f6);
+                border-radius: 4px;
+                transition: width 0.3s ease;
             }
 
             .message.tool-result {
@@ -1478,6 +1583,151 @@
                 font-size: 12px;
                 color: #aaa;
                 white-space: pre-line;
+            }
+
+            .projects-list, .project-list {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .project-item {
+                padding: 8px 12px;
+                background: #333;
+                border: 1px solid #444;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: background-color 0.2s;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .project-item:hover {
+                background: #3a3a3a;
+            }
+
+            .project-item.active {
+                background: #0d7377;
+                border-color: #14a085;
+            }
+
+            .project-item.selected {
+                background: #2a4d50;
+                border-color: #0d7377;
+            }
+
+            .project-name {
+                flex: 1;
+            }
+
+            .project-toggle {
+                background: none;
+                border: none;
+                color: #ccc;
+                font-size: 10px;
+                cursor: pointer;
+                padding: 2px 6px;
+                border-radius: 2px;
+            }
+
+            .project-toggle:hover {
+                background: #555;
+            }
+
+            .project-toggle.active {
+                color: #4caf50;
+            }
+
+            .file-tree {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+
+            .file-item {
+                padding: 6px 8px;
+                background: #2a2a2a;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 11px;
+                font-family: monospace;
+                transition: background-color 0.2s;
+            }
+
+            .file-item:hover {
+                background: #333;
+            }
+
+            .file-item.active {
+                background: #0d7377;
+                border-color: #14a085;
+            }
+
+            .main-projects {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .file-editor {
+                flex: 1;
+                background: #1a1a1a;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .editor-placeholder {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex: 1;
+                color: #666;
+                font-size: 14px;
+            }
+
+            .editor-header {
+                background: #2d2d2d;
+                padding: 10px 15px;
+                border-bottom: 1px solid #444;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .editor-filename {
+                font-family: monospace;
+                color: #e0e0e0;
+            }
+
+            .editor-actions {
+                display: flex;
+                gap: 5px;
+            }
+
+            .editor-content {
+                flex: 1;
+                overflow: auto;
+                padding: 15px;
+            }
+
+            .editor-textarea {
+                width: 100%;
+                height: 100%;
+                background: #1a1a1a;
+                border: none;
+                color: #e0e0e0;
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                font-size: 13px;
+                line-height: 1.4;
+                resize: none;
+                outline: none;
+                padding: 0;
+                margin: 0;
             }
 
             .input-area {
@@ -1628,17 +1878,43 @@
 
         bindElements() {
             this.elements = {
+                // Tab elements
+                chatTab: document.getElementById('chat-tab'),
+                projectsTab: document.getElementById('projects-tab'),
+                chatContent: document.getElementById('chat-content'),
+                projectsContent: document.getElementById('projects-content'),
+                
+                // Chat elements
                 newChatBtn: document.getElementById('new-chat-streaming'),
                 closeBtn: document.getElementById('close-overlay-streaming'),
                 chatList: document.getElementById('chat-list-streaming'),
                 messages: document.getElementById('messages-streaming'),
                 userInput: document.getElementById('user-input-streaming'),
                 sendBtn: document.getElementById('send-btn-streaming'),
-                status: document.getElementById('status-streaming')
+                status: document.getElementById('status-streaming'),
+                activeProjectsList: document.getElementById('active-projects-list'),
+                
+                // Project elements
+                newProjectBtn: document.getElementById('new-project-btn'),
+                projectsList: document.getElementById('projects-list'),
+                fileTreeSection: document.getElementById('file-tree-section'),
+                fileTree: document.getElementById('file-tree'),
+                newFileBtn: document.getElementById('new-file-btn'),
+                fileEditor: document.getElementById('file-editor')
             };
         }
 
         bindEvents() {
+            // Tab switching
+            this.elements.chatTab.addEventListener('click', () => {
+                this.switchTab('chat');
+            });
+            
+            this.elements.projectsTab.addEventListener('click', () => {
+                this.switchTab('projects');
+            });
+
+            // Chat events
             this.elements.newChatBtn.addEventListener('click', () => {
                 this.createNewChat();
             });
@@ -1657,6 +1933,30 @@
                     this.sendMessage();
                 }
             });
+
+            // Project events
+            this.elements.newProjectBtn.addEventListener('click', () => {
+                this.createNewProject();
+            });
+
+            this.elements.newFileBtn.addEventListener('click', () => {
+                this.createNewFile();
+            });
+        }
+
+        switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            if (tabName === 'chat') {
+                this.elements.chatTab.classList.add('active');
+                this.elements.chatContent.classList.add('active');
+            } else if (tabName === 'projects') {
+                this.elements.projectsTab.classList.add('active');
+                this.elements.projectsContent.classList.add('active');
+                this.updateProjectsUI();
+            }
         }
 
         createNewChat() {
@@ -1679,6 +1979,203 @@
         updateActiveProjects() {
             const activeProjects = this.chatManager.getActiveProjects();
             this.toolManager.setActiveProjects(activeProjects);
+            
+            // Update active projects list in chat sidebar
+            const list = this.elements.activeProjectsList;
+            if (list) {
+                list.innerHTML = '';
+                
+                if (activeProjects.length === 0) {
+                    list.innerHTML = '<div style="color: #666; font-size: 12px;">No projects selected</div>';
+                } else {
+                    activeProjects.forEach(projectId => {
+                        const project = this.projectManager.getProject(projectId);
+                        if (project) {
+                            const item = document.createElement('div');
+                            item.className = 'project-item active';
+                            item.innerHTML = `
+                                <span class="project-name">${project.name}</span>
+                                <button class="project-toggle active">✓</button>
+                            `;
+                            
+                            item.querySelector('.project-toggle').addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                this.toggleProjectForChat(projectId);
+                            });
+                            
+                            list.appendChild(item);
+                        }
+                    });
+                }
+            }
+        }
+
+        updateProjectsUI() {
+            this.updateProjectsList();
+            this.updateFileTree();
+        }
+
+        updateProjectsList() {
+            const list = this.elements.projectsList;
+            if (!list) return;
+            
+            list.innerHTML = '';
+            const projects = this.projectManager.listProjects();
+            
+            if (projects.length === 0) {
+                list.innerHTML = '<div style="color: #666; font-size: 12px;">No projects yet</div>';
+                return;
+            }
+            
+            projects.forEach(project => {
+                const item = document.createElement('div');
+                item.className = 'project-item';
+                if (this.selectedProject === project.id) {
+                    item.classList.add('selected');
+                }
+                
+                const isActive = this.chatManager.getActiveProjects().includes(project.id);
+                
+                item.innerHTML = `
+                    <span class="project-name">${project.name}</span>
+                    <button class="project-toggle ${isActive ? 'active' : ''}">${isActive ? '✓' : '+'}</button>
+                `;
+                
+                item.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('project-toggle')) return;
+                    this.selectProject(project.id);
+                });
+                
+                item.querySelector('.project-toggle').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggleProjectForChat(project.id);
+                });
+                
+                list.appendChild(item);
+            });
+        }
+
+        selectProject(projectId) {
+            this.selectedProject = projectId;
+            this.updateProjectsList();
+            this.updateFileTree();
+            
+            // Show file tree section
+            this.elements.fileTreeSection.style.display = 'block';
+        }
+
+        toggleProjectForChat(projectId) {
+            const activeProjects = this.chatManager.getActiveProjects();
+            const index = activeProjects.indexOf(projectId);
+            
+            if (index === -1) {
+                activeProjects.push(projectId);
+            } else {
+                activeProjects.splice(index, 1);
+            }
+            
+            this.chatManager.setActiveProjects(activeProjects);
+            this.updateActiveProjects();
+            this.updateProjectsList();
+        }
+
+        updateFileTree() {
+            const tree = this.elements.fileTree;
+            if (!tree || !this.selectedProject) return;
+            
+            tree.innerHTML = '';
+            const files = this.fileSystem.listFiles(this.selectedProject);
+            
+            if (files.length === 0) {
+                tree.innerHTML = '<div style="color: #666; font-size: 11px;">No files yet</div>';
+                return;
+            }
+            
+            files.forEach(filePath => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                if (this.selectedFile === filePath) {
+                    item.classList.add('active');
+                }
+                
+                item.textContent = filePath;
+                item.addEventListener('click', () => {
+                    this.selectFile(filePath);
+                });
+                
+                tree.appendChild(item);
+            });
+        }
+
+        selectFile(filePath) {
+            this.selectedFile = filePath;
+            this.updateFileTree();
+            this.openFileInEditor(filePath);
+        }
+
+        openFileInEditor(filePath) {
+            const content = this.fileSystem.readFile(this.selectedProject, filePath);
+            const editor = this.elements.fileEditor;
+            
+            editor.innerHTML = `
+                <div class="editor-header">
+                    <div class="editor-filename">${filePath}</div>
+                    <div class="editor-actions">
+                        <button class="btn btn-small" onclick="window.aiChatOverlayStreaming.saveCurrentFile()">Save</button>
+                        <button class="btn btn-small" onclick="window.aiChatOverlayStreaming.closeEditor()">Close</button>
+                    </div>
+                </div>
+                <div class="editor-content">
+                    <textarea class="editor-textarea" placeholder="Start typing...">${content || ''}</textarea>
+                </div>
+            `;
+        }
+
+        createNewProject() {
+            const name = prompt('Project name:');
+            if (name && name.trim()) {
+                const project = this.projectManager.createProject(name.trim());
+                this.updateProjectsList();
+                this.selectProject(project.id);
+            }
+        }
+
+        createNewFile() {
+            if (!this.selectedProject) {
+                alert('Please select a project first');
+                return;
+            }
+            
+            const path = prompt('File path (e.g., /src/main.js):');
+            if (path && path.trim()) {
+                const filePath = path.trim();
+                this.fileSystem.writeFile(this.selectedProject, filePath, '');
+                this.updateFileTree();
+                this.selectFile(filePath);
+            }
+        }
+
+        saveCurrentFile() {
+            if (!this.selectedProject || !this.selectedFile) return;
+            
+            const textarea = document.querySelector('.editor-textarea');
+            if (textarea) {
+                this.fileSystem.writeFile(this.selectedProject, this.selectedFile, textarea.value);
+                this.updateStatus('File saved', 'success');
+                setTimeout(() => {
+                    this.updateStatus('Ready - Streaming API', 'ready');
+                }, 2000);
+            }
+        }
+
+        closeEditor() {
+            this.selectedFile = null;
+            this.updateFileTree();
+            this.elements.fileEditor.innerHTML = `
+                <div class="editor-placeholder">
+                    Select a project and file to start editing
+                </div>
+            `;
         }
 
         createToolUseIndicator(toolData) {
@@ -1785,10 +2282,28 @@
         createProgressMessage() {
             const messageEl = document.createElement('div');
             messageEl.className = 'message assistant progress';
-            messageEl.textContent = 'Starting...';
+            messageEl.innerHTML = `
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" style="width: 0%"></div>
+                </div>
+            `;
             this.elements.messages.appendChild(messageEl);
             this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
             return messageEl;
+        }
+
+        updateProgressMessage(message, current, total) {
+            if (!this.currentStreamingMessage || !this.currentStreamingMessage.classList.contains('progress')) {
+                return;
+            }
+            
+            const progressFill = this.currentStreamingMessage.querySelector('.progress-bar-fill');
+            
+            if (progressFill) {
+                const percentage = (current / total) * 100;
+                progressFill.style.width = `${percentage}%`;
+                progressFill.style.transition = 'width 0.3s ease';
+            }
         }
 
         updateStatus(text, type = '', progress = null) {
@@ -1968,9 +2483,9 @@
                                 this.currentStreamingMessage = this.createStreamingMessage();
                             }
                             this.updateStatus('Streaming response...', 'streaming');
-                        } else if (this.currentStreamingMessage) {
-                            // Update progress message
-                            this.currentStreamingMessage.textContent = `${message} (${current}/${total})`;
+                        } else {
+                            // Update progress bar and text
+                            this.updateProgressMessage(message, current, total);
                             this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
                         }
                     } : null
