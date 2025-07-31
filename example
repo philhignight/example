@@ -39,6 +39,7 @@
     // Configuration
     const CONFIG = {
         STORAGE_KEY: 'ai_chat_overlay_streaming_data',
+        PROJECTS_KEY: 'ai_chat_projects',
         HEARTBEAT_INTERVAL: 60000, // 60 seconds
         HEARTBEAT_MESSAGE: 'respond "k"',
         OVERALL_TIMEOUT: 10 * 60 * 1000, // 10 minutes
@@ -806,6 +807,318 @@
         }
     }
 
+    // File System Emulation
+    class FileSystemManager {
+        constructor() {
+            Logger.log('FileSystem', 'Initializing File System Manager');
+        }
+
+        static getFileKey(projectId, path) {
+            return `file-system.${projectId}.${path}`;
+        }
+
+        readFile(projectId, path) {
+            const key = FileSystemManager.getFileKey(projectId, path);
+            const content = localStorage.getItem(key);
+            Logger.log('FileSystem', 'Read file', { projectId, path, found: !!content });
+            return content;
+        }
+
+        writeFile(projectId, path, content) {
+            const key = FileSystemManager.getFileKey(projectId, path);
+            localStorage.setItem(key, content);
+            Logger.log('FileSystem', 'Write file', { projectId, path, size: content.length });
+        }
+
+        searchFiles(projectId, query, pathPattern = '*') {
+            const prefix = `file-system.${projectId}.`;
+            const results = [];
+            
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(prefix)) {
+                    const path = key.substring(prefix.length);
+                    const content = localStorage.getItem(key);
+                    
+                    // Simple pattern matching (could be enhanced)
+                    if (pathPattern === '*' || path.includes(pathPattern.replace('*', ''))) {
+                        if (content && content.toLowerCase().includes(query.toLowerCase())) {
+                            const lines = content.split('\n');
+                            const matchingLines = lines
+                                .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+                                .filter(({ line }) => line.toLowerCase().includes(query.toLowerCase()))
+                                .slice(0, 3); // Limit to 3 matches per file
+                            
+                            results.push({
+                                path,
+                                matches: matchingLines
+                            });
+                        }
+                    }
+                }
+            }
+            
+            Logger.log('FileSystem', 'Search files', { projectId, query, found: results.length });
+            return results;
+        }
+
+        listFiles(projectId, pathPrefix = '') {
+            const prefix = `file-system.${projectId}.${pathPrefix}`;
+            const files = [];
+            
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(prefix)) {
+                    const path = key.substring(`file-system.${projectId}.`.length);
+                    files.push(path);
+                }
+            }
+            
+            return files.sort();
+        }
+    }
+
+    // Project Management
+    class ProjectManager {
+        constructor() {
+            Logger.log('ProjectManager', 'Initializing Project Manager');
+            this.projects = this.loadProjects();
+        }
+
+        loadProjects() {
+            try {
+                const stored = localStorage.getItem(CONFIG.PROJECTS_KEY);
+                return stored ? JSON.parse(stored) : [];
+            } catch (e) {
+                Logger.error('ProjectManager', 'Failed to load projects', e);
+                return [];
+            }
+        }
+
+        saveProjects() {
+            try {
+                localStorage.setItem(CONFIG.PROJECTS_KEY, JSON.stringify(this.projects));
+            } catch (e) {
+                Logger.error('ProjectManager', 'Failed to save projects', e);
+            }
+        }
+
+        createProject(name) {
+            const id = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+            const project = {
+                id,
+                name,
+                created: new Date().toISOString()
+            };
+            
+            this.projects.push(project);
+            this.saveProjects();
+            Logger.log('ProjectManager', 'Project created', { id, name });
+            return project;
+        }
+
+        getProject(id) {
+            return this.projects.find(p => p.id === id);
+        }
+
+        listProjects() {
+            return [...this.projects];
+        }
+    }
+
+    // Tool Use Parser and Executor
+    class ToolManager {
+        constructor(fileSystem, projectManager) {
+            this.fileSystem = fileSystem;
+            this.projectManager = projectManager;
+            this.activeProjects = [];
+            Logger.log('ToolManager', 'Initializing Tool Manager');
+        }
+
+        setActiveProjects(projectIds) {
+            this.activeProjects = projectIds;
+            Logger.log('ToolManager', 'Active projects set', { projectIds });
+        }
+
+        parseToolUses(text) {
+            const toolUses = [];
+            const regex = /<tool_use>(.*?)<\/tool_use>/gs;
+            let match;
+            
+            while ((match = regex.exec(text)) !== null) {
+                try {
+                    const toolData = JSON.parse(match[1]);
+                    toolUses.push({
+                        fullMatch: match[0],
+                        startIndex: match.index,
+                        endIndex: match.index + match[0].length,
+                        data: toolData
+                    });
+                } catch (e) {
+                    Logger.warn('ToolManager', 'Failed to parse tool use', { text: match[1] });
+                }
+            }
+            
+            return toolUses;
+        }
+
+        async executeTool(toolData) {
+            Logger.log('ToolManager', 'Executing tool', { type: toolData.tool_type });
+            
+            switch (toolData.tool_type) {
+                case 'read_file':
+                    return this.executeReadFile(toolData);
+                case 'search_files':
+                    return this.executeSearchFiles(toolData);
+                default:
+                    throw new Error(`Unknown tool type: ${toolData.tool_type}`);
+            }
+        }
+
+        executeReadFile(toolData) {
+            const { path } = toolData;
+            const results = [];
+            
+            for (const projectId of this.activeProjects) {
+                const content = this.fileSystem.readFile(projectId, path);
+                if (content !== null) {
+                    results.push({
+                        projectId,
+                        path,
+                        found: true,
+                        content,
+                        size: content.length
+                    });
+                } else {
+                    results.push({
+                        projectId,
+                        path,
+                        found: false,
+                        error: 'File not found'
+                    });
+                }
+            }
+            
+            return {
+                tool_type: 'read_file',
+                path,
+                results
+            };
+        }
+
+        executeSearchFiles(toolData) {
+            const { query, path_pattern } = toolData;
+            const results = [];
+            
+            for (const projectId of this.activeProjects) {
+                const searchResults = this.fileSystem.searchFiles(projectId, query, path_pattern);
+                results.push({
+                    projectId,
+                    query,
+                    matches: searchResults
+                });
+            }
+            
+            return {
+                tool_type: 'search_files',
+                query,
+                path_pattern,
+                results
+            };
+        }
+    }
+
+    // Streaming Response Parser with Tool Use Detection
+    class StreamingParser {
+        constructor(toolManager) {
+            this.toolManager = toolManager;
+            this.reset();
+        }
+
+        reset() {
+            this.buffer = '';
+            this.output = '';
+            this.toolUses = [];
+            this.inProgress = false;
+        }
+
+        processChunk(chunk) {
+            this.buffer += chunk;
+            const result = {
+                displayText: '',
+                toolUses: [],
+                isComplete: false
+            };
+
+            let searchStart = 0;
+            
+            while (true) {
+                // Look for start of potential tool use
+                const toolStart = this.buffer.indexOf('<tool_use>', searchStart);
+                
+                if (toolStart === -1) {
+                    // No tool use found, output remaining buffer
+                    if (searchStart < this.buffer.length) {
+                        const remaining = this.buffer.substring(searchStart);
+                        this.output += remaining;
+                        result.displayText += remaining;
+                        this.buffer = '';
+                    }
+                    break;
+                }
+                
+                // Output text before tool use
+                if (toolStart > searchStart) {
+                    const beforeTool = this.buffer.substring(searchStart, toolStart);
+                    this.output += beforeTool;
+                    result.displayText += beforeTool;
+                }
+                
+                // Look for end of tool use
+                const toolEnd = this.buffer.indexOf('</tool_use>', toolStart);
+                
+                if (toolEnd === -1) {
+                    // Tool use not complete yet, keep in buffer
+                    this.buffer = this.buffer.substring(toolStart);
+                    break;
+                }
+                
+                // Extract complete tool use
+                const toolUseText = this.buffer.substring(toolStart, toolEnd + 11);
+                const toolContent = this.buffer.substring(toolStart + 10, toolEnd);
+                
+                try {
+                    const toolData = JSON.parse(toolContent);
+                    const toolUse = {
+                        data: toolData,
+                        text: toolUseText
+                    };
+                    
+                    this.toolUses.push(toolUse);
+                    result.toolUses.push(toolUse);
+                    
+                    Logger.log('StreamingParser', 'Tool use detected', { type: toolData.tool_type });
+                } catch (e) {
+                    // Not valid JSON, treat as regular text
+                    this.output += toolUseText;
+                    result.displayText += toolUseText;
+                }
+                
+                searchStart = toolEnd + 11;
+            }
+
+            return result;
+        }
+
+        getCompleteOutput() {
+            return this.output;
+        }
+
+        getToolUses() {
+            return [...this.toolUses];
+        }
+    }
+
     // Chat Management
     class ChatManager {
         constructor() {
@@ -837,7 +1150,8 @@
                 id: chatId,
                 timestamp: new Date().toLocaleString(),
                 messages: [],
-                conversationId: null // Will be set when first message is sent
+                conversationId: null, // Will be set when first message is sent
+                activeProjects: [] // Projects accessible to this chat
             };
             this.data.chats.unshift(chat);
             this.data.currentChatId = chatId;
@@ -890,6 +1204,23 @@
         getConversationId() {
             const chat = this.getCurrentChat();
             return chat ? chat.conversationId : null;
+        }
+
+        setActiveProjects(projectIds) {
+            const chat = this.getCurrentChat();
+            if (chat) {
+                chat.activeProjects = projectIds;
+                this.saveData();
+                Logger.log('ChatManager', 'Active projects set', { 
+                    chatId: chat.id, 
+                    projectIds 
+                });
+            }
+        }
+
+        getActiveProjects() {
+            const chat = this.getCurrentChat();
+            return chat ? chat.activeProjects : [];
         }
     }
 
@@ -1093,6 +1424,62 @@
                 opacity: 0.8;
             }
 
+            .message.tool-result {
+                border-left: 3px solid #9c27b0;
+                background: #2a2a2a;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+
+            .message.tool-result:hover {
+                background: #333;
+            }
+
+            .tool-use-indicator {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                background: #3a3a3a;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 8px;
+                margin: 2px 4px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+
+            .tool-use-indicator:hover {
+                background: #444;
+            }
+
+            .tool-icon {
+                font-size: 14px;
+            }
+
+            .tool-main {
+                font-size: 12px;
+                color: #ccc;
+                font-family: monospace;
+            }
+
+            .tool-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 8px;
+                font-weight: bold;
+            }
+
+            .tool-title {
+                color: #e0e0e0;
+            }
+
+            .tool-preview {
+                font-size: 12px;
+                color: #aaa;
+                white-space: pre-line;
+            }
+
             .input-area {
                 padding: 15px 20px;
                 background: #2d2d2d;
@@ -1203,11 +1590,16 @@
             Logger.log('App', 'Initializing Streaming Chat App');
             this.apiManager = new StreamingAPIManager();
             this.chatManager = new ChatManager();
+            this.fileSystem = new FileSystemManager();
+            this.projectManager = new ProjectManager();
+            this.toolManager = new ToolManager(this.fileSystem, this.projectManager);
+            this.streamingParser = new StreamingParser(this.toolManager);
             this.container = null;
             this.elements = {};
             this.lastActivityTime = Date.now();
             this.heartbeatTimer = null;
             this.currentStreamingMessage = null;
+            this.pendingToolExecutions = [];
         }
 
         async init() {
@@ -1281,6 +1673,67 @@
         updateUI() {
             this.updateChatList();
             this.updateMessages();
+            this.updateActiveProjects();
+        }
+
+        updateActiveProjects() {
+            const activeProjects = this.chatManager.getActiveProjects();
+            this.toolManager.setActiveProjects(activeProjects);
+        }
+
+        createToolUseIndicator(toolData) {
+            const indicator = document.createElement('div');
+            indicator.className = 'tool-use-indicator';
+            
+            const icon = toolData.tool_type === 'read_file' ? '📖' : '🔍';
+            const mainProp = toolData.tool_type === 'read_file' ? toolData.path : toolData.query;
+            
+            indicator.innerHTML = `
+                <span class="tool-icon">${icon}</span>
+                <span class="tool-main">${mainProp}</span>
+            `;
+            
+            indicator.addEventListener('click', () => {
+                // TODO: Expand tool use details
+                console.log('Tool use clicked:', toolData);
+            });
+            
+            return indicator;
+        }
+
+        createToolResultBubble(toolResult) {
+            const bubble = document.createElement('div');
+            bubble.className = 'message tool-result';
+            
+            const icon = toolResult.tool_type === 'read_file' ? '📖' : '🔍';
+            const title = toolResult.tool_type === 'read_file' ? 
+                `Tool Result: Read File` : 
+                `Tool Result: Search Files`;
+            
+            // Create preview of results
+            let preview = '';
+            if (toolResult.tool_type === 'read_file') {
+                const successCount = toolResult.results.filter(r => r.found).length;
+                preview = `${toolResult.path}\nFound in ${successCount} project(s) [click to expand]`;
+            } else {
+                const totalMatches = toolResult.results.reduce((sum, r) => sum + r.matches.length, 0);
+                preview = `"${toolResult.query}"\nFound ${totalMatches} matches [click to expand]`;
+            }
+            
+            bubble.innerHTML = `
+                <div class="tool-header">
+                    <span class="tool-icon">${icon}</span>
+                    <span class="tool-title">${title}</span>
+                </div>
+                <div class="tool-preview">${preview}</div>
+            `;
+            
+            bubble.addEventListener('click', () => {
+                // TODO: Expand full tool results
+                console.log('Tool result clicked:', toolResult);
+            });
+            
+            return bubble;
         }
 
         updateChatList() {
@@ -1400,6 +1853,11 @@
                 let streamContent = '';
                 let newConversationId = null;
                 
+                // Reset streaming parser for new message
+                if (!isHeartbeat) {
+                    this.streamingParser.reset();
+                }
+                
                 const result = await this.apiManager.sendMessage(
                     message,
                     conversationHistory,
@@ -1407,14 +1865,25 @@
                     // onChunk
                     (chunk) => {
                         if (!isHeartbeat && this.currentStreamingMessage) {
-                            streamContent += chunk;
+                            // Process chunk through parser
+                            const parseResult = this.streamingParser.processChunk(chunk);
+                            
+                            // Update display with parsed text (no raw tool uses)
+                            streamContent += parseResult.displayText;
                             this.currentStreamingMessage.textContent = streamContent;
+                            
+                            // Add tool use indicators inline
+                            parseResult.toolUses.forEach(toolUse => {
+                                const indicator = this.createToolUseIndicator(toolUse.data);
+                                this.currentStreamingMessage.appendChild(indicator);
+                            });
+                            
                             this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
                             this.updateStatus('Streaming response...', 'streaming');
                         }
                     },
                     // onComplete
-                    () => {
+                    async () => {
                         if (isHeartbeat) {
                             Logger.log('Heartbeat', 'Heartbeat completed successfully');
                         } else {
@@ -1423,14 +1892,50 @@
                             // Remove streaming indicator
                             if (this.currentStreamingMessage) {
                                 this.currentStreamingMessage.classList.remove('streaming');
-                                this.currentStreamingMessage = null;
+                            }
+                            
+                            // Get all tool uses from the complete response
+                            const toolUses = this.streamingParser.getToolUses();
+                            
+                            if (toolUses.length > 0) {
+                                Logger.log('App', 'Executing tools', { count: toolUses.length });
+                                this.updateStatus('Executing tools...', 'streaming');
+                                
+                                // Execute all tools
+                                const toolResults = [];
+                                for (const toolUse of toolUses) {
+                                    try {
+                                        const result = await this.toolManager.executeTool(toolUse.data);
+                                        toolResults.push(result);
+                                        
+                                        // Create and add tool result bubble
+                                        const resultBubble = this.createToolResultBubble(result);
+                                        this.elements.messages.appendChild(resultBubble);
+                                        this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+                                    } catch (error) {
+                                        Logger.error('App', 'Tool execution failed', error);
+                                        const errorBubble = this.createToolResultBubble({
+                                            tool_type: toolUse.data.tool_type,
+                                            error: error.message,
+                                            results: []
+                                        });
+                                        this.elements.messages.appendChild(errorBubble);
+                                    }
+                                }
+                                
+                                this.updateStatus('Tools completed', 'success');
+                                
+                                // TODO: If tools were executed, continue conversation with tool results
+                                // For now, just complete this turn
                             }
                             
                             // Save the complete response
-                            if (streamContent) {
-                                this.chatManager.addMessage('assistant', streamContent);
+                            const completeOutput = this.streamingParser.getCompleteOutput();
+                            if (completeOutput) {
+                                this.chatManager.addMessage('assistant', completeOutput);
                             }
                             
+                            this.currentStreamingMessage = null;
                             this.updateStatus('Message completed', 'success');
                         }
                     },
