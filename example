@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 06:19:53 PM UTC 2025
+// Generated on Thu Jul 31 06:29:50 PM UTC 2025
 
 // ===== api-manager.js =====
 (function() {
@@ -460,9 +460,19 @@
                 }
 
                 // Step 2: Stream completions using the modified conversation object
+                // Include all user messages and assistant messages with content (exclude only empty assistant messages)
                 const messages = conversationObject.chat.messages
-                    .filter(m => m.role !== 'assistant' || m.content) // Exclude empty assistant messages
+                    .filter(m => {
+                        if (m.role === 'user') return true; // Always include user messages
+                        if (m.role === 'assistant') return m.content && m.content.trim(); // Only include assistant messages with actual content
+                        return false; // Exclude any other roles
+                    })
                     .map(m => ({ role: m.role, content: m.content }));
+
+                this.logger.log('StreamingAPI', 'Messages being sent to completions', {
+                    totalMessages: messages.length,
+                    messageBreakdown: messages.map(m => ({ role: m.role, contentLength: m.content.length }))
+                });
 
                 await this.step3StreamCompletions(
                     conversationId,
