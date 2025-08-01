@@ -1,5 +1,312 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Thu Jul 31 08:45:33 PM UTC 2025
+// Generated on Fri Aug  1 01:40:32 AM UTC 2025
+
+// ===== diff-viewer.js =====
+(function() {
+    'use strict';
+    
+    class DiffViewer {
+        constructor(container, options = {}) {
+            this.container = container;
+            this.options = {
+                showLineNumbers: true,
+                contextLines: 3,
+                ...options
+            };
+            
+            this.plugins = new Map();
+            this.currentPlugin = null;
+            this.diffData = null;
+            this.originalContent = '';
+            
+            this.init();
+        }
+        
+        init() {
+            this.createElements();
+        }
+        
+        createElements() {
+            // Create wrapper
+            this.wrapper = document.createElement('div');
+            this.wrapper.className = 'diff-viewer';
+            this.wrapper.style.cssText = `
+                position: relative;
+                width: 100%;
+                height: 100%;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                line-height: 1.4;
+                border: 1px solid #ccc;
+                background: #fff;
+                overflow: auto;
+            `;
+            
+            // Create diff content display
+            this.diffContent = document.createElement('div');
+            this.diffContent.className = 'diff-content';
+            this.diffContent.style.cssText = `
+                padding: 0;
+                margin: 0;
+                white-space: pre;
+                font-family: inherit;
+                font-size: inherit;
+                line-height: inherit;
+            `;
+            
+            this.wrapper.appendChild(this.diffContent);
+            this.container.appendChild(this.wrapper);
+        }
+        
+        registerPlugin(name, plugin) {
+            if (!plugin || typeof plugin.highlight !== 'function') {
+                throw new Error('Plugin must have a highlight method');
+            }
+            this.plugins.set(name, plugin);
+        }
+        
+        setLanguage(pluginName) {
+            if (!this.plugins.has(pluginName)) {
+                throw new Error(`Plugin '${pluginName}' not found`);
+            }
+            this.currentPlugin = this.plugins.get(pluginName);
+            this.updateDiff();
+        }
+        
+        setDiff(diffData, originalContent = '') {
+            this.diffData = diffData;
+            this.originalContent = originalContent;
+            this.updateDiff();
+        }
+        
+        updateDiff() {
+            if (!this.diffData) {
+                this.diffContent.innerHTML = '';
+                return;
+            }
+            
+            try {
+                const diffHtml = this.generateDiffHtml();
+                this.diffContent.innerHTML = diffHtml;
+            } catch (error) {
+                console.error('Diff generation failed:', error);
+                this.diffContent.innerHTML = this.escapeHtml('Error generating diff');
+            }
+        }
+        
+        generateDiffHtml() {
+            const { file, replacements } = this.diffData;
+            
+            // Parse original content into lines
+            const originalLines = this.originalContent.split('\n');
+            
+            // Create diff sections
+            let diffHtml = this.createFileHeader(file);
+            
+            // Sort replacements by start_line to process in order
+            const sortedReplacements = [...replacements].sort((a, b) => a.start_line - b.start_line);
+            
+            let currentLine = 1;
+            
+            for (const replacement of sortedReplacements) {
+                // Add context before the change
+                const contextStart = Math.max(currentLine, replacement.start_line - this.options.contextLines);
+                
+                if (contextStart > currentLine) {
+                    // Add unchanged lines before context
+                    for (let i = currentLine; i < contextStart; i++) {
+                        if (i <= originalLines.length) {
+                            diffHtml += this.createUnchangedLine(i, originalLines[i - 1]);
+                        }
+                    }
+                    if (contextStart > currentLine + 1) {
+                        diffHtml += this.createSeparator();
+                    }
+                }
+                
+                // Add context lines
+                for (let i = contextStart; i < replacement.start_line; i++) {
+                    if (i <= originalLines.length) {
+                        diffHtml += this.createContextLine(i, originalLines[i - 1]);
+                    }
+                }
+                
+                // Add removed lines
+                for (let i = replacement.start_line; i <= replacement.end_line; i++) {
+                    if (i <= originalLines.length) {
+                        diffHtml += this.createRemovedLine(i, originalLines[i - 1]);
+                    }
+                }
+                
+                // Add new lines
+                if (replacement.new_content) {
+                    const newLines = replacement.new_content.split('\n');
+                    for (let i = 0; i < newLines.length; i++) {
+                        diffHtml += this.createAddedLine(replacement.start_line + i, newLines[i]);
+                    }
+                }
+                
+                // Add context after the change
+                const contextEnd = Math.min(originalLines.length, replacement.end_line + this.options.contextLines);
+                for (let i = replacement.end_line + 1; i <= contextEnd; i++) {
+                    if (i <= originalLines.length) {
+                        diffHtml += this.createContextLine(i, originalLines[i - 1]);
+                    }
+                }
+                
+                currentLine = replacement.end_line + 1;
+            }
+            
+            return diffHtml;
+        }
+        
+        createFileHeader(filename) {
+            return `<div class="diff-file-header" style="
+                background: #f6f8fa;
+                border-bottom: 1px solid #d1d9e0;
+                padding: 8px 16px;
+                font-weight: bold;
+                color: #24292e;
+            ">📄 ${this.escapeHtml(filename)}</div>`;
+        }
+        
+        createUnchangedLine(lineNum, content) {
+            return this.createDiffLine(lineNum, content, 'unchanged', '#f8f9fa', '');
+        }
+        
+        createContextLine(lineNum, content) {
+            return this.createDiffLine(lineNum, content, 'context', '', ' ');
+        }
+        
+        createRemovedLine(lineNum, content) {
+            return this.createDiffLine(lineNum, content, 'removed', '#ffeef0', '-');
+        }
+        
+        createAddedLine(lineNum, content) {
+            return this.createDiffLine(lineNum, content, 'added', '#e6ffed', '+');
+        }
+        
+        createDiffLine(lineNum, content, type, bgColor, prefix) {
+            const lineNumberHtml = this.options.showLineNumbers 
+                ? `<span class="line-number" style="
+                    display: inline-block;
+                    width: 50px;
+                    text-align: right;
+                    padding-right: 8px;
+                    color: #666;
+                    background: #f6f8fa;
+                    border-right: 1px solid #d1d9e0;
+                    user-select: none;
+                ">${lineNum}</span>`
+                : '';
+            
+            const prefixHtml = `<span class="diff-prefix" style="
+                display: inline-block;
+                width: 20px;
+                color: ${type === 'added' ? '#28a745' : type === 'removed' ? '#d73a49' : '#666'};
+                font-weight: bold;
+                user-select: none;
+            ">${prefix}</span>`;
+            
+            const highlightedContent = this.highlightContent(content || '');
+            
+            return `<div class="diff-line diff-line-${type}" style="
+                display: flex;
+                background: ${bgColor};
+                border-left: 3px solid ${
+                    type === 'added' ? '#28a745' : 
+                    type === 'removed' ? '#d73a49' : 
+                    'transparent'
+                };
+                padding: 2px 0;
+                margin: 0;
+            ">
+                ${lineNumberHtml}
+                ${prefixHtml}
+                <span class="diff-line-content" style="flex: 1; padding-left: 8px;">${highlightedContent}</span>
+            </div>`;
+        }
+        
+        createSeparator() {
+            return `<div class="diff-separator" style="
+                text-align: center;
+                color: #666;
+                background: #f6f8fa;
+                padding: 4px;
+                margin: 8px 0;
+                border-top: 1px solid #e1e4e8;
+                border-bottom: 1px solid #e1e4e8;
+                font-size: 12px;
+            ">⋯</div>`;
+        }
+        
+        highlightContent(content) {
+            if (!this.currentPlugin || !content.trim()) {
+                return this.escapeHtml(content);
+            }
+            
+            try {
+                return this.currentPlugin.highlight(content);
+            } catch (error) {
+                console.error('Highlighting failed:', error);
+                return this.escapeHtml(content);
+            }
+        }
+        
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Auto-detect language from file extension
+        detectLanguageFromFile(filename) {
+            const ext = filename.split('.').pop()?.toLowerCase();
+            const langMap = {
+                'java': 'java',
+                'js': 'javascript',
+                'ts': 'typescript',
+                'py': 'python',
+                'cpp': 'cpp',
+                'c': 'c',
+                'h': 'c'
+            };
+            
+            return langMap[ext] || null;
+        }
+        
+        // Utility method to auto-set language based on file
+        autoSetLanguage() {
+            if (!this.diffData?.file) return;
+            
+            const detectedLang = this.detectLanguageFromFile(this.diffData.file);
+            if (detectedLang && this.plugins.has(detectedLang)) {
+                this.setLanguage(detectedLang);
+            }
+        }
+        
+        // Get summary stats
+        getDiffStats() {
+            if (!this.diffData?.replacements) return { additions: 0, deletions: 0 };
+            
+            let additions = 0;
+            let deletions = 0;
+            
+            for (const replacement of this.diffData.replacements) {
+                const removedLines = replacement.end_line - replacement.start_line + 1;
+                const addedLines = replacement.new_content ? replacement.new_content.split('\n').length : 0;
+                
+                deletions += removedLines;
+                additions += addedLines;
+            }
+            
+            return { additions, deletions };
+        }
+    }
+    
+    // Export to window
+    window.DiffViewer = DiffViewer;
+})();
 
 // ===== editor.js =====
 (function() {
@@ -1681,6 +1988,13 @@ Use tools when:
 - You need to create new files as part of implementing features or solutions
 - You want to understand what files exist and their relationships
 
+IMPORTANT RESPONSE RULES:
+- If you need to use tools, send ONLY the tool uses (starting with <tool_use>)
+- If you want to respond with a message, send ONLY the message text (no tool uses)
+- NEVER mix tool uses and message text in the same response
+- Always end the conversation with a final message response after all tools are complete
+- You can send multiple tool uses in one response, but no message text with them
+
 Always use the exact tool_use format shown above. The tools will search across the currently active project files.`;
 
             // Add project file structure for new conversations
@@ -2546,6 +2860,65 @@ Use this file structure to understand the project layout. You can read any of th
             return bubble;
         }
 
+        createToolUseBubble(toolData) {
+            const bubble = document.createElement('div');
+            bubble.className = 'message tool-use';
+            bubble.dataset.toolType = toolData.tool_type;
+            
+            const header = document.createElement('div');
+            header.className = 'tool-header';
+            header.innerHTML = `
+                <span class="tool-icon">🔧</span>
+                <span class="tool-title">Using Tool: ${toolData.tool_type}</span>
+                <span class="tool-status">Processing...</span>
+            `;
+            
+            const requestSection = document.createElement('div');
+            requestSection.className = 'tool-request';
+            requestSection.innerHTML = `
+                <div class="tool-request-label">Request:</div>
+                <div class="tool-request-content">${JSON.stringify(toolData, null, 2)}</div>
+            `;
+            
+            const resultSection = document.createElement('div');
+            resultSection.className = 'tool-result-section';
+            resultSection.style.display = 'none'; // Hidden until we have results
+            
+            bubble.appendChild(header);
+            bubble.appendChild(requestSection);
+            bubble.appendChild(resultSection);
+            
+            return bubble;
+        }
+
+        updateToolUseBubble(bubble, result) {
+            const header = bubble.querySelector('.tool-header .tool-status');
+            const resultSection = bubble.querySelector('.tool-result-section');
+            
+            if (result.error) {
+                header.textContent = 'Failed';
+                header.className = 'tool-status error';
+                resultSection.innerHTML = `
+                    <div class="tool-result-label">Error:</div>
+                    <div class="tool-result-content error">${result.error}</div>
+                `;
+            } else {
+                header.textContent = 'Completed';
+                header.className = 'tool-status success';
+                
+                const summary = result.results 
+                    ? `${result.results.length} result(s)`
+                    : 'No results';
+                    
+                resultSection.innerHTML = `
+                    <div class="tool-result-label">Result: ${summary}</div>
+                    <div class="tool-result-content">${JSON.stringify(result, null, 2)}</div>
+                `;
+            }
+            
+            resultSection.style.display = 'block';
+        }
+
         async sendMessage(isHeartbeat = false) {
             if (!this.currentProject) {
                 if (!isHeartbeat) {
@@ -2607,18 +2980,48 @@ Use this file structure to understand the project layout. You can read any of th
                         if (!isHeartbeat) {
                             const parseResult = this.streamingParser.processChunk(chunk);
                             
-                            if (this.currentStreamingMessage) {
-                                this.currentStreamingMessage.textContent += parseResult.displayText;
+                            // Handle different response types
+                            if (parseResult.responseType === 'tool_use') {
+                                // Tool use response - convert streaming message to tool use bubble(s)
+                                if (this.currentStreamingMessage && this.currentStreamingMessage.classList.contains('streaming')) {
+                                    // Replace progress message with tool use bubble
+                                    this.currentStreamingMessage.remove();
+                                    this.currentStreamingMessage = null;
+                                }
+                                
+                                // Create/update tool use bubbles
+                                parseResult.toolUses.forEach(toolUse => {
+                                    // Check if bubble already exists for this tool use
+                                    const existingBubble = Array.from(this.elements.messages.children)
+                                        .find(el => el.classList.contains('tool-use') && 
+                                                  el.dataset.toolData === JSON.stringify(toolUse.data));
+                                    
+                                    if (!existingBubble) {
+                                        const toolBubble = this.createToolUseBubble(toolUse.data);
+                                        toolBubble.dataset.toolData = JSON.stringify(toolUse.data);
+                                        this.elements.messages.appendChild(toolBubble);
+                                        this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+                                    }
+                                });
+                                
+                                this.updateStatus('Processing tools...', 'streaming');
+                            } else if (parseResult.responseType === 'message') {
+                                // Regular message response - stream text normally
+                                if (this.currentStreamingMessage) {
+                                    this.currentStreamingMessage.textContent += parseResult.displayText;
+                                }
+                                
+                                this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+                                this.updateStatus('Streaming response...', 'streaming');
                             }
                             
-                            // Add tool use indicators inline
+                            // Legacy tool use indicators (shouldn't happen with new flow)
                             parseResult.toolUses.forEach(toolUse => {
                                 const indicator = this.createToolUseIndicator(toolUse.data);
-                                this.currentStreamingMessage.appendChild(indicator);
+                                if (this.currentStreamingMessage) {
+                                    this.currentStreamingMessage.appendChild(indicator);
+                                }
                             });
-                            
-                            this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
-                            this.updateStatus('Streaming response...', 'streaming');
                         }
                     },
                     // onComplete
@@ -2640,25 +3043,45 @@ Use this file structure to understand the project layout. You can read any of th
                                 this.logger.log('App', 'Executing tools', { count: toolUses.length });
                                 this.updateStatus('Executing tools...', 'streaming');
                                 
-                                // Execute all tools
+                                // Execute all tools and update their bubbles
                                 const toolResults = [];
                                 for (const toolUse of toolUses) {
+                                    // Find the corresponding tool use bubble
+                                    const toolBubble = Array.from(this.elements.messages.children)
+                                        .find(el => el.classList.contains('tool-use') && 
+                                                  el.dataset.toolData === JSON.stringify(toolUse.data));
+                                    
                                     try {
                                         const result = await this.toolManager.executeTool(toolUse.data);
                                         toolResults.push(result);
                                         
-                                        // Create and add tool result bubble
-                                        const resultBubble = this.createToolResultBubble(result);
-                                        this.elements.messages.appendChild(resultBubble);
+                                        // Update the existing tool use bubble with results
+                                        if (toolBubble) {
+                                            this.updateToolUseBubble(toolBubble, result);
+                                        } else {
+                                            // Fallback: create separate result bubble if no tool bubble found
+                                            const resultBubble = this.createToolResultBubble(result);
+                                            this.elements.messages.appendChild(resultBubble);
+                                        }
+                                        
                                         this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
                                     } catch (error) {
                                         this.logger.error('App', 'Tool execution failed', error);
-                                        const errorBubble = this.createToolResultBubble({
+                                        
+                                        const errorResult = {
                                             tool_type: toolUse.data.tool_type,
                                             error: error.message,
                                             results: []
-                                        });
-                                        this.elements.messages.appendChild(errorBubble);
+                                        };
+                                        
+                                        // Update the existing tool use bubble with error
+                                        if (toolBubble) {
+                                            this.updateToolUseBubble(toolBubble, errorResult);
+                                        } else {
+                                            // Fallback: create separate error bubble
+                                            const errorBubble = this.createToolResultBubble(errorResult);
+                                            this.elements.messages.appendChild(errorBubble);
+                                        }
                                     }
                                 }
                                 
@@ -2668,21 +3091,28 @@ Use this file structure to understand the project layout. You can read any of th
                                 // For now, just complete this turn
                             }
                             
-                            // Save the complete response
+                            // Save the complete response only if it's a message response
+                            const responseType = this.streamingParser.getResponseType();
                             const completeOutput = this.streamingParser.getCompleteOutput();
-                            if (completeOutput && completeOutput.trim() && projectChat) {
+                            
+                            if (responseType === 'message' && completeOutput && completeOutput.trim() && projectChat) {
                                 projectChat.messages.push({
                                     role: 'assistant',
                                     content: completeOutput.trim(),
                                     timestamp: Date.now()
                                 });
-                                this.logger.log('App', 'Assistant response saved to project chat', {
+                                this.logger.log('App', 'Assistant message response saved to project chat', {
                                     projectId: this.currentProject,
                                     responseLength: completeOutput.trim().length,
                                     totalMessages: projectChat.messages.length
                                 });
+                            } else if (responseType === 'tool_use') {
+                                this.logger.log('App', 'Tool use response - not saving to chat history', {
+                                    toolCount: this.streamingParser.getToolUses().length
+                                });
                             } else {
-                                this.logger.warn('App', 'Empty assistant response - not saving', {
+                                this.logger.warn('App', 'Empty or invalid response - not saving', {
+                                    responseType,
                                     completeOutput,
                                     hasProjectChat: !!projectChat
                                 });
@@ -3121,6 +3551,7 @@ Use this file structure to understand the project layout. You can read any of th
             this.buffer = '';
             this.completeOutput = '';
             this.toolUses = [];
+            this.responseType = null; // 'tool_use' or 'message'
             this.logger.log('StreamingParser', 'Initializing Streaming Parser');
         }
 
@@ -3128,6 +3559,7 @@ Use this file structure to understand the project layout. You can read any of th
             this.buffer = '';
             this.completeOutput = '';
             this.toolUses = [];
+            this.responseType = null;
             this.logger.log('StreamingParser', 'Parser reset');
         }
 
@@ -3135,9 +3567,22 @@ Use this file structure to understand the project layout. You can read any of th
             this.buffer += chunk;
             this.completeOutput += chunk;
 
+            // Detect response type on first chunk if not already determined
+            if (this.responseType === null && this.buffer.trim().length > 0) {
+                const trimmedBuffer = this.buffer.trim();
+                if (trimmedBuffer.startsWith('<tool')) {
+                    this.responseType = 'tool_use';
+                    this.logger.log('StreamingParser', 'Detected tool use response');
+                } else {
+                    this.responseType = 'message';
+                    this.logger.log('StreamingParser', 'Detected message response');
+                }
+            }
+
             const parseResult = {
                 displayText: chunk,
-                toolUses: []
+                toolUses: [],
+                responseType: this.responseType
             };
 
             // Look for complete tool use patterns in the buffer
@@ -3228,6 +3673,18 @@ Use this file structure to understand the project layout. You can read any of th
             cleanOutput = cleanOutput.trim();
             
             return cleanOutput;
+        }
+
+        getResponseType() {
+            return this.responseType;
+        }
+
+        isToolUseResponse() {
+            return this.responseType === 'tool_use';
+        }
+
+        isMessageResponse() {
+            return this.responseType === 'message';
         }
     }
 
@@ -3792,6 +4249,71 @@ Use this file structure to understand the project layout. You can read any of th
                     font-size: 12px;
                     color: #aaa;
                     white-space: pre-line;
+                }
+
+                /* New tool use bubble styles */
+                .message.tool-use {
+                    border-left: 3px solid #2196F3;
+                    background: #2a2a3a;
+                    margin: 10px 0;
+                }
+
+                .tool-status {
+                    margin-left: auto;
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 11px;
+                    font-weight: normal;
+                    background: #555;
+                    color: #ccc;
+                }
+
+                .tool-status.success {
+                    background: #4CAF50;
+                    color: white;
+                }
+
+                .tool-status.error {
+                    background: #f44336;
+                    color: white;
+                }
+
+                .tool-request {
+                    margin-top: 8px;
+                    border-top: 1px solid #444;
+                    padding-top: 8px;
+                }
+
+                .tool-request-label, .tool-result-label {
+                    font-size: 11px;
+                    color: #888;
+                    margin-bottom: 4px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+
+                .tool-request-content, .tool-result-content {
+                    font-family: monospace;
+                    font-size: 12px;
+                    background: #1a1a1a;
+                    border: 1px solid #444;
+                    border-radius: 4px;
+                    padding: 8px;
+                    color: #e0e0e0;
+                    white-space: pre-wrap;
+                    overflow-x: auto;
+                }
+
+                .tool-result-section {
+                    margin-top: 8px;
+                    border-top: 1px solid #444;
+                    padding-top: 8px;
+                }
+
+                .tool-result-content.error {
+                    background: #2a1a1a;
+                    border-color: #f44336;
+                    color: #ffcdd2;
                 }
 
                 .input-container {
