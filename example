@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 01:40:32 AM UTC 2025
+// Generated on Fri Aug  1 02:54:48 AM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -2674,26 +2674,94 @@ Use this file structure to understand the project layout. You can read any of th
                     <span class="file-path">${tabData.filePath}</span>
                     <button class="btn save-btn">Save</button>
                 </div>
-                <div class="file-editor-content">
-                    <textarea class="editor-textarea" placeholder="Start typing...">${tabData.content}</textarea>
+                <div class="file-editor-content" style="height: calc(100% - 40px);">
                 </div>
             `;
             
             this.elements.editorContent.appendChild(pane);
             
-            // Bind save button
-            const saveBtn = pane.querySelector('.save-btn');
-            const textarea = pane.querySelector('.editor-textarea');
+            // Initialize CodeEditor
+            const editorContainer = pane.querySelector('.file-editor-content');
+            const editor = new window.CodeEditor(editorContainer);
             
+            // Register Java plugin if available
+            if (window.JavaPlugin) {
+                const javaPlugin = new window.JavaPlugin();
+                editor.registerPlugin('java', javaPlugin);
+                
+                // Auto-detect language based on file extension
+                const fileExt = tabData.filePath.toLowerCase().split('.').pop();
+                if (fileExt === 'java') {
+                    editor.setLanguage('java');
+                }
+            }
+            
+            // Set initial content
+            editor.setValue(tabData.content);
+            
+            // Store editor reference for saving
+            tabData.editor = editor;
+            
+            // Handle save button
+            const saveBtn = pane.querySelector('.save-btn');
             saveBtn.addEventListener('click', () => {
                 this.saveFile(tabId);
             });
             
-            textarea.addEventListener('input', () => {
-                tabData.content = textarea.value;
+            // Monitor editor changes
+            editor.onContentChange = () => {
+                tabData.content = editor.getValue();
                 tabData.isDirty = true;
-                // TODO: Add visual dirty indicator
-            });
+                this.updateTabTitle(tabId);
+            };
+        }
+
+        saveFile(tabId) {
+            const tabData = this.openTabs.get(tabId);
+            if (!tabData || tabData.type !== 'file') return;
+            
+            // Get current content from editor
+            if (tabData.editor) {
+                tabData.content = tabData.editor.getValue();
+            }
+            
+            // Save to file system
+            const success = this.fileSystem.writeFile(tabData.projectId, tabData.filePath, tabData.content);
+            
+            if (success) {
+                tabData.isDirty = false;
+                this.updateTabTitle(tabId);
+                this.logger.log('App', 'File saved', { 
+                    projectId: tabData.projectId, 
+                    filePath: tabData.filePath 
+                });
+                
+                // Show brief success indicator
+                const saveBtn = document.querySelector('.file-editor-pane .save-btn');
+                if (saveBtn) {
+                    const originalText = saveBtn.textContent;
+                    saveBtn.textContent = 'Saved!';
+                    saveBtn.style.background = '#28a745';
+                    setTimeout(() => {
+                        saveBtn.textContent = originalText;
+                        saveBtn.style.background = '';
+                    }, 1000);
+                }
+            } else {
+                alert('Failed to save file');
+            }
+        }
+
+        updateTabTitle(tabId) {
+            const tabData = this.openTabs.get(tabId);
+            if (!tabData) return;
+            
+            const tabElement = document.querySelector(`[data-tab="${tabId}"]`);
+            if (tabElement) {
+                const fileName = tabData.filePath.split('/').pop();
+                const dirtyIndicator = tabData.isDirty ? '*' : '';
+                tabElement.textContent = `${fileName}${dirtyIndicator}`;
+            }
         }
 
         closeTab(tabId) {
