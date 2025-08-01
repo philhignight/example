@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 09:34:11 PM UTC 2025
+// Generated on Fri Aug  1 11:19:10 PM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -5746,12 +5746,22 @@ Use this file structure to understand the project layout. You can read any of th
         }
 
         populateProjectsList() {
+            if (!this.projectManager || typeof this.projectManager.getAllProjects !== 'function') {
+                this.logger.error('App', 'Project manager not available or getAllProjects method missing');
+                return;
+            }
+            
             const projects = this.projectManager.getAllProjects();
             const projectsList = this.elements.projectsList;
             
+            if (!projectsList) {
+                this.logger.error('App', 'Projects list element not found');
+                return;
+            }
+            
             projectsList.innerHTML = '';
             
-            if (projects.length === 0) {
+            if (!projects || projects.length === 0) {
                 projectsList.innerHTML = '<div class="no-projects">No projects yet. Create your first project!</div>';
                 return;
             }
@@ -5762,7 +5772,7 @@ Use this file structure to understand the project layout. You can read any of th
                 projectItem.dataset.projectId = project.id;
                 projectItem.innerHTML = `
                     <div class="project-item-name">${project.name}</div>
-                    <div class="project-item-path">${project.createdAt}</div>
+                    <div class="project-item-path">${new Date(project.created).toLocaleDateString()}</div>
                 `;
                 projectsList.appendChild(projectItem);
             });
@@ -5826,22 +5836,65 @@ Use this file structure to understand the project layout. You can read any of th
             const loadingEl = this.addHomeMessage('assistant', '', false, true);
             
             try {
+                let responseContent = '';
+                let responseMessageEl = null;
+                
+                // Convert home messages to API format
+                const conversationHistory = (this.homeMessages || []).map(msg => ({
+                    role: msg.sender === 'user' ? 'user' : 'assistant',
+                    content: msg.content
+                }));
+                
                 // Process without project context (no tools available)
-                const response = await this.apiManager.sendMessage(message, null, []);
-                
-                // Remove loading message
-                loadingEl.remove();
-                
-                // Add response
-                this.addHomeMessage('assistant', response);
-                
-                // Update status
-                this.elements.homeStatus.textContent = 'Ready';
-                this.elements.homeStatus.className = 'status-bar ready';
+                await this.apiManager.sendMessage(
+                    message, 
+                    conversationHistory, // Use converted home message history
+                    null, // No existing conversation ID for home chat
+                    (chunk) => {
+                        // On chunk received
+                        if (!responseMessageEl) {
+                            // Remove loading message and create response message on first chunk
+                            loadingEl.remove();
+                            responseMessageEl = this.addHomeMessage('assistant', '', true);
+                        }
+                        responseContent += chunk;
+                        responseMessageEl.textContent = responseContent;
+                        this.elements.homeMessages.scrollTop = this.elements.homeMessages.scrollHeight;
+                    },
+                    () => {
+                        // On complete
+                        if (responseMessageEl) {
+                            responseMessageEl.classList.remove('streaming');
+                            // Add to home messages history
+                            this.homeMessages.push({ 
+                                sender: 'assistant', 
+                                content: responseContent, 
+                                timestamp: Date.now() 
+                            });
+                        }
+                        this.elements.homeStatus.textContent = 'Ready';
+                        this.elements.homeStatus.className = 'status-bar ready';
+                    },
+                    (error) => {
+                        // On error
+                        this.logger.error('App', 'Error processing home message', error);
+                        if (loadingEl && loadingEl.parentNode) {
+                            loadingEl.remove();
+                        }
+                        if (responseMessageEl && responseMessageEl.parentNode) {
+                            responseMessageEl.remove();
+                        }
+                        this.addHomeMessage('assistant', 'Sorry, I encountered an error processing your message.');
+                        this.elements.homeStatus.textContent = 'Error';
+                        this.elements.homeStatus.className = 'status-bar error';
+                    }
+                );
                 
             } catch (error) {
-                this.logger.error('App', 'Error processing home message', error);
-                loadingEl.remove();
+                this.logger.error('App', 'Error setting up home message processing', error);
+                if (loadingEl && loadingEl.parentNode) {
+                    loadingEl.remove();
+                }
                 this.addHomeMessage('assistant', 'Sorry, I encountered an error processing your message.');
                 this.elements.homeStatus.textContent = 'Error';
                 this.elements.homeStatus.className = 'status-bar error';
@@ -6337,6 +6390,10 @@ Use this file structure to understand the project layout. You can read any of th
         }
 
         listProjects() {
+            return this.loadProjects();
+        }
+
+        getAllProjects() {
             return this.loadProjects();
         }
 
@@ -7238,6 +7295,8 @@ Use this file structure to understand the project layout. You can read any of th
                     display: flex;
                     flex-direction: column;
                     gap: 15px;
+                    min-height: 0; /* Allows flex item to shrink below content size */
+                    max-height: 100%; /* Ensures it doesn't exceed container */
                 }
 
                 .message {
