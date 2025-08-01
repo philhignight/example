@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 03:24:32 AM UTC 2025
+// Generated on Fri Aug  1 03:06:07 PM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -341,11 +341,12 @@
                 position: relative;
                 width: 100%;
                 height: 100%;
-                font-family: 'Courier New', monospace;
-                font-size: 14px;
+                font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                font-size: 13px;
                 line-height: 1.4;
-                border: 1px solid #ccc;
-                background: #fff;
+                border: 1px solid #444;
+                background: #1a1a1a;
+                color: #e0e0e0;
             `;
             
             // Create highlighted code display
@@ -391,7 +392,7 @@
                 overflow: auto;
                 background: transparent;
                 color: transparent;
-                caret-color: black;
+                caret-color: #e0e0e0;
                 z-index: 2;
             `;
             
@@ -404,6 +405,11 @@
             this.textarea.addEventListener('input', () => {
                 this.content = this.textarea.value;
                 this.updateHighlighting();
+                
+                // Call the content change callback if provided
+                if (this.onContentChange) {
+                    this.onContentChange();
+                }
             });
             
             this.textarea.addEventListener('scroll', () => {
@@ -1472,13 +1478,13 @@
         constructor() {
             super('java');
             this.colorScheme = {
-                keyword: '#0000ff',
-                string: '#008000',
-                number: '#ff8c00',
-                comment: '#808080',
-                identifier: '#000000',
-                operator: '#800080',
-                delimiter: '#000000'
+                keyword: '#569cd6',    // Light blue for keywords (class, public, if, etc.)
+                string: '#ce9178',     // Light orange for strings
+                number: '#b5cea8',     // Light green for numbers
+                comment: '#6a9955',    // Green for comments  
+                identifier: '#d4d4d4', // Light gray for variables
+                operator: '#d4d4d4',   // Light gray for operators
+                delimiter: '#d4d4d4'   // Light gray for punctuation
             };
         }
         
@@ -2698,22 +2704,29 @@ Use this file structure to understand the project layout. You can read any of th
 
         switchToTab(tabId) {
             this.activeTab = tabId;
+            this.logger.log('App', 'Switching to tab', { tabId });
             
             // Update tab visual state
             this.updateEditorTabs();
             
-            // Update content
+            // Hide all panes first
             const panes = this.elements.editorContent.querySelectorAll('.tab-pane');
+            this.logger.log('App', 'Found panes to hide', { count: panes.length });
             panes.forEach(pane => {
                 pane.classList.remove('active');
             });
             
             if (tabId === 'chat') {
                 const chatPane = this.elements.editorContent.querySelector('[data-tab="chat"]');
+                this.logger.log('App', 'Looking for chat pane', { found: !!chatPane });
                 if (chatPane) {
                     chatPane.classList.add('active');
+                    this.logger.log('App', 'Chat pane activated');
+                } else {
+                    this.logger.error('App', 'Chat pane not found!');
                 }
             } else {
+                this.logger.log('App', 'Showing file editor for tab', { tabId });
                 this.showFileEditor(tabId);
             }
         }
