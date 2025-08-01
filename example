@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 03:16:02 AM UTC 2025
+// Generated on Fri Aug  1 03:24:32 AM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -762,6 +762,8 @@
         RIGHT_PAREN: 'RIGHT_PAREN',
         LEFT_BRACE: 'LEFT_BRACE',
         RIGHT_BRACE: 'RIGHT_BRACE',
+        LEFT_BRACKET: 'LEFT_BRACKET',
+        RIGHT_BRACKET: 'RIGHT_BRACKET',
         SEMICOLON: 'SEMICOLON',
         COMMA: 'COMMA',
         DOT: 'DOT',
@@ -951,6 +953,12 @@
                     break;
                 case '}':
                     this.addToken(TokenType.RIGHT_BRACE);
+                    break;
+                case '[':
+                    this.addToken(TokenType.LEFT_BRACKET);
+                    break;
+                case ']':
+                    this.addToken(TokenType.RIGHT_BRACKET);
                     break;
                 case ';':
                     this.addToken(TokenType.SEMICOLON);
@@ -1487,6 +1495,18 @@
                 return this.tokensToHtml(tokens, sourceCode);
             } catch (error) {
                 console.error('Java highlighting failed:', error);
+                console.error('Source code causing error:', sourceCode);
+                console.error('Error details:', {
+                    message: error.message,
+                    line: error.line || 'unknown',
+                    column: error.column || 'unknown',
+                    stack: error.stack
+                });
+                
+                // Try to identify problematic content
+                const lines = sourceCode.split('\n');
+                console.error('Source code lines:', lines.map((line, i) => `${i + 1}: ${line}`));
+                
                 // Fallback to plain text
                 return this.escapeHtml(sourceCode);
             }
@@ -2752,22 +2772,75 @@ Use this file structure to understand the project layout. You can read any of th
             
             // Initialize CodeEditor
             const editorContainer = pane.querySelector('.file-editor-content');
-            const editor = new window.CodeEditor(editorContainer);
+            this.logger.log('App', 'Initializing CodeEditor for file', { 
+                filePath: tabData.filePath, 
+                contentLength: tabData.content.length 
+            });
             
-            // Register Java plugin if available
-            if (window.JavaPlugin) {
-                const javaPlugin = new window.JavaPlugin();
-                editor.registerPlugin('java', javaPlugin);
+            let editor;
+            try {
+                editor = new window.CodeEditor(editorContainer);
+                this.logger.log('App', 'CodeEditor created successfully');
                 
-                // Auto-detect language based on file extension
-                const fileExt = tabData.filePath.toLowerCase().split('.').pop();
-                if (fileExt === 'java') {
-                    editor.setLanguage('java');
+                // Register Java plugin if available
+                if (window.JavaPlugin) {
+                    const javaPlugin = new window.JavaPlugin();
+                    editor.registerPlugin('java', javaPlugin);
+                    this.logger.log('App', 'Java plugin registered');
+                    
+                    // Auto-detect language based on file extension
+                    const fileExt = tabData.filePath.toLowerCase().split('.').pop();
+                    if (fileExt === 'java') {
+                        this.logger.log('App', 'Setting language to Java for file', { fileExt });
+                        try {
+                            editor.setLanguage('java');
+                            this.logger.log('App', 'Java language set successfully');
+                        } catch (langError) {
+                            this.logger.error('App', 'Failed to set Java language', langError);
+                            // Continue without syntax highlighting
+                        }
+                    }
+                } else {
+                    this.logger.warn('App', 'JavaPlugin not available');
                 }
+                
+                // Set initial content
+                this.logger.log('App', 'Setting editor content', { 
+                    contentPreview: tabData.content.substring(0, 100) + (tabData.content.length > 100 ? '...' : '') 
+                });
+                editor.setValue(tabData.content);
+                this.logger.log('App', 'Editor content set successfully');
+                
+            } catch (editorError) {
+                this.logger.error('App', 'Failed to initialize CodeEditor', editorError);
+                
+                // Fallback to textarea
+                this.logger.log('App', 'Using textarea fallback');
+                editorContainer.innerHTML = `
+                    <textarea 
+                        style="width: 100%; height: 100%; border: none; font-family: monospace; font-size: 14px; padding: 8px;"
+                        placeholder="Editor failed to load, using simple text area..."
+                    >${tabData.content}</textarea>
+                `;
+                
+                // Create a simple editor-like object for compatibility
+                const textarea = editorContainer.querySelector('textarea');
+                editor = {
+                    getValue: () => textarea.value,
+                    setValue: (value) => { textarea.value = value; },
+                    onContentChange: null
+                };
+                
+                // Handle content changes
+                textarea.addEventListener('input', () => {
+                    tabData.content = textarea.value;
+                    tabData.isDirty = true;
+                    this.updateTabTitle(tabId);
+                    if (editor.onContentChange) {
+                        editor.onContentChange();
+                    }
+                });
             }
-            
-            // Set initial content
-            editor.setValue(tabData.content);
             
             // Store editor reference for saving
             tabData.editor = editor;
