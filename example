@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 09:30:20 PM UTC 2025
+// Generated on Fri Aug  1 09:34:11 PM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -766,44 +766,6 @@
     // Export to window
     window.EditorPlugin = EditorPlugin;
 })();
-
-// ===== debug-field.js =====
-const fs = require('fs');
-
-const astSource = fs.readFileSync('./java-ast.js', 'utf8');
-const lexerSource = fs.readFileSync('./java-lexer.js', 'utf8');
-const parserSource = fs.readFileSync('./java-parser.js', 'utf8');
-
-eval(astSource);
-eval(lexerSource);
-eval(parserSource);
-
-function parseJava(source) {
-    const lexer = new window.JavaLexer.Lexer(source);
-    const tokens = lexer.tokenize();
-    const parser = new window.JavaParser.Parser(tokens);
-    return parser.parse();
-}
-
-const source = `
-    public class Test {
-        private static final int CONSTANT = 42;
-        protected String name;
-        public int[] numbers = new int[10];
-    }
-`;
-
-const ast = parseJava(source);
-const fields = ast.classes[0].fields;
-
-console.log('Field count:', fields.length);
-console.log('Field 2 (numbers):');
-console.log('  name:', fields[2].name);  
-console.log('  fieldType:', fields[2].fieldType);
-console.log('  fieldType type:', typeof fields[2].fieldType);
-console.log('  fieldType.type:', fields[2].fieldType?.type);
-console.log('  base type property:', fields[2].type);
-
 
 // ===== java-ast.js =====
 (function() {
