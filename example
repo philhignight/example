@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 02:54:48 AM UTC 2025
+// Generated on Fri Aug  1 03:16:02 AM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -2491,12 +2491,82 @@ Use this file structure to understand the project layout. You can read any of th
                 return;
             }
             
+            // Capture current expansion state before rebuilding
+            const expandedFolders = this.getExpandedFolders(explorer);
+            
             const files = this.fileSystem.listFiles(this.currentProject);
             const fileTree = this.buildFileTree(files);
             
             explorer.innerHTML = '<button class="new-file-btn" onclick="window.aiChatOverlayStreaming.createNewFile()" title="New File">+</button>';
             const treeElement = this.renderFileTree(fileTree);
             explorer.appendChild(treeElement);
+            
+            // Restore expansion state
+            this.restoreExpandedFolders(explorer, expandedFolders);
+        }
+
+        getExpandedFolders(container) {
+            const expandedPaths = new Set();
+            const folderItems = container.querySelectorAll('.folder-item.expanded');
+            
+            folderItems.forEach(folder => {
+                // Build the folder path by traversing up the tree
+                let path = '';
+                let currentEl = folder;
+                const pathParts = [];
+                
+                while (currentEl && currentEl !== container) {
+                    if (currentEl.classList.contains('folder-item')) {
+                        const folderName = currentEl.textContent.replace(/^[📁📂]\s*/, '');
+                        pathParts.unshift(folderName);
+                    }
+                    currentEl = currentEl.parentElement;
+                }
+                
+                if (pathParts.length > 0) {
+                    path = pathParts.join('/');
+                    expandedPaths.add(path);
+                }
+            });
+            
+            return expandedPaths;
+        }
+
+        restoreExpandedFolders(container, expandedPaths) {
+            expandedPaths.forEach(path => {
+                const pathParts = path.split('/');
+                let currentContainer = container;
+                
+                // Navigate through the folder hierarchy
+                for (let i = 0; i < pathParts.length; i++) {
+                    const folderName = pathParts[i];
+                    const folderItems = currentContainer.querySelectorAll('.folder-item');
+                    
+                    for (const folderEl of folderItems) {
+                        const folderText = folderEl.textContent.replace(/^[📁📂]\s*/, '');
+                        if (folderText === folderName) {
+                            // Expand this folder
+                            folderEl.classList.add('expanded');
+                            
+                            // Update icon
+                            const folderIcon = folderEl.querySelector('.folder-icon');
+                            if (folderIcon) {
+                                folderIcon.textContent = '📂';
+                            }
+                            
+                            // Show the child container
+                            const childContainer = folderEl.nextElementSibling;
+                            if (childContainer && childContainer.style) {
+                                childContainer.style.display = 'block';
+                            }
+                            
+                            // Move to the child container for next iteration
+                            currentContainer = childContainer;
+                            break;
+                        }
+                    }
+                }
+            });
         }
 
         buildFileTree(files) {
@@ -3130,6 +3200,11 @@ Use this file structure to understand the project layout. You can read any of th
                                             // Fallback: create separate result bubble if no tool bubble found
                                             const resultBubble = this.createToolResultBubble(result);
                                             this.elements.messages.appendChild(resultBubble);
+                                        }
+                                        
+                                        // Refresh file explorer if file operations were successful
+                                        if (toolUse.data.tool_type === 'write_file' && result.results.some(r => r.status === 'success')) {
+                                            this.updateFileExplorer();
                                         }
                                         
                                         this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
