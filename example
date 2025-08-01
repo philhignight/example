@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 03:06:07 PM UTC 2025
+// Generated on Fri Aug  1 03:36:04 PM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -579,23 +579,60 @@
     
     // Class Declaration
     class ClassDeclaration extends ASTNode {
-        constructor(name, modifiers = [], methods = []) {
+        constructor(name, modifiers = [], fields = [], methods = [], superclass = null, interfaces = []) {
             super('ClassDeclaration');
             this.name = name;
             this.modifiers = modifiers;
+            this.fields = fields;
             this.methods = methods;
+            this.superclass = superclass;
+            this.interfaces = interfaces;
+        }
+    }
+    
+    // Interface Declaration
+    class InterfaceDeclaration extends ASTNode {
+        constructor(name, modifiers = [], methods = [], interfaces = []) {
+            super('InterfaceDeclaration');
+            this.name = name;
+            this.modifiers = modifiers;
+            this.methods = methods;
+            this.interfaces = interfaces;
+        }
+    }
+    
+    // Field Declaration
+    class FieldDeclaration extends ASTNode {
+        constructor(type, name, modifiers = [], initializer = null) {
+            super('FieldDeclaration');
+            this.type = type;
+            this.name = name;
+            this.modifiers = modifiers;
+            this.initializer = initializer;
+        }
+    }
+    
+    // Constructor Declaration
+    class ConstructorDeclaration extends ASTNode {
+        constructor(name, parameters = [], modifiers = [], body = null) {
+            super('ConstructorDeclaration');
+            this.name = name;
+            this.parameters = parameters;
+            this.modifiers = modifiers;
+            this.body = body;
         }
     }
     
     // Method Declaration
     class MethodDeclaration extends ASTNode {
-        constructor(name, returnType, parameters = [], modifiers = [], body = null) {
+        constructor(name, returnType, parameters = [], modifiers = [], body = null, throwsClause = []) {
             super('MethodDeclaration');
             this.name = name;
             this.returnType = returnType;
             this.parameters = parameters;
             this.modifiers = modifiers;
             this.body = body;
+            this.throwsClause = throwsClause;
         }
     }
     
@@ -628,10 +665,11 @@
     
     // Assignment Expression
     class AssignmentExpression extends ASTNode {
-        constructor(left, right) {
+        constructor(left, right, operator = '=') {
             super('AssignmentExpression');
             this.left = left;
             this.right = right;
+            this.operator = operator;
         }
     }
     
@@ -689,6 +727,98 @@
         }
     }
     
+    // For Statement
+    class ForStatement extends ASTNode {
+        constructor(init, condition, update, body) {
+            super('ForStatement');
+            this.init = init;
+            this.condition = condition;
+            this.update = update;
+            this.body = body;
+        }
+    }
+    
+    // Enhanced For Statement (for-each)
+    class EnhancedForStatement extends ASTNode {
+        constructor(variable, iterable, body) {
+            super('EnhancedForStatement');
+            this.variable = variable;
+            this.iterable = iterable;
+            this.body = body;
+        }
+    }
+    
+    // Do-While Statement
+    class DoWhileStatement extends ASTNode {
+        constructor(body, condition) {
+            super('DoWhileStatement');
+            this.body = body;
+            this.condition = condition;
+        }
+    }
+    
+    // Switch Statement
+    class SwitchStatement extends ASTNode {
+        constructor(expression, cases) {
+            super('SwitchStatement');
+            this.expression = expression;
+            this.cases = cases;
+        }
+    }
+    
+    // Switch Case
+    class SwitchCase extends ASTNode {
+        constructor(test, statements, isDefault = false) {
+            super('SwitchCase');
+            this.test = test; // null for default case
+            this.statements = statements;
+            this.isDefault = isDefault;
+        }
+    }
+    
+    // Break Statement
+    class BreakStatement extends ASTNode {
+        constructor(label = null) {
+            super('BreakStatement');
+            this.label = label;
+        }
+    }
+    
+    // Continue Statement
+    class ContinueStatement extends ASTNode {
+        constructor(label = null) {
+            super('ContinueStatement');
+            this.label = label;
+        }
+    }
+    
+    // Try Statement
+    class TryStatement extends ASTNode {
+        constructor(block, handlers = [], finalizer = null) {
+            super('TryStatement');
+            this.block = block;
+            this.handlers = handlers; // catch clauses
+            this.finalizer = finalizer; // finally block
+        }
+    }
+    
+    // Catch Clause
+    class CatchClause extends ASTNode {
+        constructor(param, body) {
+            super('CatchClause');
+            this.param = param; // exception parameter
+            this.body = body;
+        }
+    }
+    
+    // Throw Statement
+    class ThrowStatement extends ASTNode {
+        constructor(argument) {
+            super('ThrowStatement');
+            this.argument = argument;
+        }
+    }
+    
     // Expression Statement
     class ExpressionStatement extends ASTNode {
         constructor(expression) {
@@ -707,24 +837,136 @@
         }
     }
     
+    // Unary Expression
+    class UnaryExpression extends ASTNode {
+        constructor(operator, operand, prefix = true) {
+            super('UnaryExpression');
+            this.operator = operator;
+            this.operand = operand;
+            this.prefix = prefix; // true for ++x, false for x++
+        }
+    }
+    
+    // Ternary Expression
+    class TernaryExpression extends ASTNode {
+        constructor(test, consequent, alternate) {
+            super('TernaryExpression');
+            this.test = test;
+            this.consequent = consequent;
+            this.alternate = alternate;
+        }
+    }
+    
+    // Array Access Expression
+    class ArrayAccessExpression extends ASTNode {
+        constructor(array, index) {
+            super('ArrayAccessExpression');
+            this.array = array;
+            this.index = index;
+        }
+    }
+    
+    // Array Creation Expression
+    class ArrayCreationExpression extends ASTNode {
+        constructor(type, dimensions, initializer = null) {
+            super('ArrayCreationExpression');
+            this.type = type;
+            this.dimensions = dimensions; // array of expressions for each dimension
+            this.initializer = initializer;
+        }
+    }
+    
+    // Object Creation Expression
+    class ObjectCreationExpression extends ASTNode {
+        constructor(type, args = []) {
+            super('ObjectCreationExpression');
+            this.type = type;
+            this.arguments = args;
+        }
+    }
+    
+    // This Expression
+    class ThisExpression extends ASTNode {
+        constructor() {
+            super('ThisExpression');
+        }
+    }
+    
+    // Super Expression
+    class SuperExpression extends ASTNode {
+        constructor() {
+            super('SuperExpression');
+        }
+    }
+    
+    // Package Declaration
+    class PackageDeclaration extends ASTNode {
+        constructor(name) {
+            super('PackageDeclaration');
+            this.name = name;
+        }
+    }
+    
+    // Import Declaration
+    class ImportDeclaration extends ASTNode {
+        constructor(name, isStatic = false, isWildcard = false) {
+            super('ImportDeclaration');
+            this.name = name;
+            this.isStatic = isStatic;
+            this.isWildcard = isWildcard;
+        }
+    }
+    
+    // Array Type
+    class ArrayType extends ASTNode {
+        constructor(elementType, dimensions = 1) {
+            super('ArrayType');
+            this.elementType = elementType;
+            this.dimensions = dimensions;
+        }
+    }
+    
     // Export to window
     window.JavaAST = {
         ASTNode,
         Program,
         ClassDeclaration,
+        InterfaceDeclaration,
+        FieldDeclaration,
+        ConstructorDeclaration,
         MethodDeclaration,
         Parameter,
         BlockStatement,
         VariableDeclaration,
         AssignmentExpression,
         BinaryExpression,
+        UnaryExpression,
+        TernaryExpression,
         Identifier,
         Literal,
         ReturnStatement,
         IfStatement,
         WhileStatement,
+        ForStatement,
+        EnhancedForStatement,
+        DoWhileStatement,
+        SwitchStatement,
+        SwitchCase,
+        BreakStatement,
+        ContinueStatement,
+        TryStatement,
+        CatchClause,
+        ThrowStatement,
         ExpressionStatement,
-        MethodCallExpression
+        MethodCallExpression,
+        ArrayAccessExpression,
+        ArrayCreationExpression,
+        ObjectCreationExpression,
+        ThisExpression,
+        SuperExpression,
+        PackageDeclaration,
+        ImportDeclaration,
+        ArrayType
     };
 })();
 
@@ -737,31 +979,86 @@
         IDENTIFIER: 'IDENTIFIER',
         STRING_LITERAL: 'STRING_LITERAL',
         NUMBER_LITERAL: 'NUMBER_LITERAL',
+        BOOLEAN_LITERAL: 'BOOLEAN_LITERAL',
+        CHAR_LITERAL: 'CHAR_LITERAL',
+        NULL_LITERAL: 'NULL_LITERAL',
         
         // Keywords
         CLASS: 'CLASS',
+        INTERFACE: 'INTERFACE',
+        EXTENDS: 'EXTENDS',
+        IMPLEMENTS: 'IMPLEMENTS',
+        PACKAGE: 'PACKAGE',
+        IMPORT: 'IMPORT',
         PUBLIC: 'PUBLIC',
         PRIVATE: 'PRIVATE',
+        PROTECTED: 'PROTECTED',
         STATIC: 'STATIC',
+        FINAL: 'FINAL',
+        ABSTRACT: 'ABSTRACT',
         VOID: 'VOID',
         INT: 'INT',
         STRING: 'STRING',
+        BOOLEAN: 'BOOLEAN',
+        CHAR: 'CHAR',
+        LONG: 'LONG',
+        DOUBLE: 'DOUBLE',
+        FLOAT: 'FLOAT',
+        BYTE: 'BYTE',
+        SHORT: 'SHORT',
         IF: 'IF',
         ELSE: 'ELSE',
         WHILE: 'WHILE',
         FOR: 'FOR',
+        DO: 'DO',
+        SWITCH: 'SWITCH',
+        CASE: 'CASE',
+        DEFAULT: 'DEFAULT',
+        BREAK: 'BREAK',
+        CONTINUE: 'CONTINUE',
         RETURN: 'RETURN',
+        TRY: 'TRY',
+        CATCH: 'CATCH',
+        FINALLY: 'FINALLY',
+        THROW: 'THROW',
+        THROWS: 'THROWS',
+        NEW: 'NEW',
+        THIS: 'THIS',
+        SUPER: 'SUPER',
+        TRUE: 'TRUE',
+        FALSE: 'FALSE',
+        NULL: 'NULL',
         
         // Operators
         PLUS: 'PLUS',
         MINUS: 'MINUS',
         MULTIPLY: 'MULTIPLY',
         DIVIDE: 'DIVIDE',
+        MODULO: 'MODULO',
         ASSIGN: 'ASSIGN',
+        PLUS_ASSIGN: 'PLUS_ASSIGN',
+        MINUS_ASSIGN: 'MINUS_ASSIGN',
+        MULTIPLY_ASSIGN: 'MULTIPLY_ASSIGN',
+        DIVIDE_ASSIGN: 'DIVIDE_ASSIGN',
+        INCREMENT: 'INCREMENT',
+        DECREMENT: 'DECREMENT',
         EQUALS: 'EQUALS',
         NOT_EQUALS: 'NOT_EQUALS',
         LESS_THAN: 'LESS_THAN',
         GREATER_THAN: 'GREATER_THAN',
+        LESS_EQUAL: 'LESS_EQUAL',
+        GREATER_EQUAL: 'GREATER_EQUAL',
+        LOGICAL_AND: 'LOGICAL_AND',
+        LOGICAL_OR: 'LOGICAL_OR',
+        LOGICAL_NOT: 'LOGICAL_NOT',
+        BITWISE_AND: 'BITWISE_AND',
+        BITWISE_OR: 'BITWISE_OR',
+        BITWISE_XOR: 'BITWISE_XOR',
+        BITWISE_NOT: 'BITWISE_NOT',
+        LEFT_SHIFT: 'LEFT_SHIFT',
+        RIGHT_SHIFT: 'RIGHT_SHIFT',
+        UNSIGNED_RIGHT_SHIFT: 'UNSIGNED_RIGHT_SHIFT',
+        TERNARY: 'TERNARY',
         
         // Delimiters
         LEFT_PAREN: 'LEFT_PAREN',
@@ -773,6 +1070,7 @@
         SEMICOLON: 'SEMICOLON',
         COMMA: 'COMMA',
         DOT: 'DOT',
+        COLON: 'COLON',
         
         // Special
         EOF: 'EOF',
@@ -803,17 +1101,49 @@
             
             this.keywords = {
                 'class': TokenType.CLASS,
+                'interface': TokenType.INTERFACE,
+                'extends': TokenType.EXTENDS,
+                'implements': TokenType.IMPLEMENTS,
+                'package': TokenType.PACKAGE,
+                'import': TokenType.IMPORT,
                 'public': TokenType.PUBLIC,
                 'private': TokenType.PRIVATE,
+                'protected': TokenType.PROTECTED,
                 'static': TokenType.STATIC,
+                'final': TokenType.FINAL,
+                'abstract': TokenType.ABSTRACT,
                 'void': TokenType.VOID,
                 'int': TokenType.INT,
                 'String': TokenType.STRING,
+                'boolean': TokenType.BOOLEAN,
+                'char': TokenType.CHAR,
+                'long': TokenType.LONG,
+                'double': TokenType.DOUBLE,
+                'float': TokenType.FLOAT,
+                'byte': TokenType.BYTE,
+                'short': TokenType.SHORT,
                 'if': TokenType.IF,
                 'else': TokenType.ELSE,
                 'while': TokenType.WHILE,
                 'for': TokenType.FOR,
-                'return': TokenType.RETURN
+                'do': TokenType.DO,
+                'switch': TokenType.SWITCH,
+                'case': TokenType.CASE,
+                'default': TokenType.DEFAULT,
+                'break': TokenType.BREAK,
+                'continue': TokenType.CONTINUE,
+                'return': TokenType.RETURN,
+                'try': TokenType.TRY,
+                'catch': TokenType.CATCH,
+                'finally': TokenType.FINALLY,
+                'throw': TokenType.THROW,
+                'throws': TokenType.THROWS,
+                'new': TokenType.NEW,
+                'this': TokenType.THIS,
+                'super': TokenType.SUPER,
+                'true': TokenType.TRUE,
+                'false': TokenType.FALSE,
+                'null': TokenType.NULL
             };
         }
         
@@ -905,6 +1235,52 @@
             this.tokens.push(new Token(TokenType.STRING_LITERAL, value, startLine, startColumn));
         }
         
+        scanChar() {
+            const startLine = this.line;
+            const startColumn = this.column;
+            let value = '';
+            
+            // Skip opening quote
+            this.advance();
+            
+            if (this.peek() === '\\') {
+                // Handle escape sequences
+                this.advance(); // consume backslash
+                const escaped = this.peek();
+                switch (escaped) {
+                    case 'n':
+                        value = '\n';
+                        break;
+                    case 't':
+                        value = '\t';
+                        break;
+                    case 'r':
+                        value = '\r';
+                        break;
+                    case '\\':
+                        value = '\\';
+                        break;
+                    case '\'':
+                        value = '\'';
+                        break;
+                    default:
+                        value = escaped;
+                }
+                this.advance();
+            } else if (this.peek() !== '\'' && this.peek() !== '\0') {
+                value = this.advance();
+            }
+            
+            if (this.peek() !== '\'') {
+                throw new Error(`Unterminated character literal at line ${startLine}, column ${startColumn}`);
+            }
+            
+            // Skip closing quote
+            this.advance();
+            
+            this.tokens.push(new Token(TokenType.CHAR_LITERAL, value, startLine, startColumn));
+        }
+        
         scanNumber() {
             const startColumn = this.column;
             let value = '';
@@ -932,7 +1308,15 @@
                 value += this.advance();
             }
             
-            const tokenType = this.keywords[value] || TokenType.IDENTIFIER;
+            let tokenType = this.keywords[value] || TokenType.IDENTIFIER;
+            
+            // Special handling for boolean literals
+            if (value === 'true' || value === 'false') {
+                tokenType = TokenType.BOOLEAN_LITERAL;
+            } else if (value === 'null') {
+                tokenType = TokenType.NULL_LITERAL;
+            }
+            
             this.tokens.push(new Token(tokenType, value, this.line, startColumn));
         }
         
@@ -976,13 +1360,34 @@
                     this.addToken(TokenType.DOT);
                     break;
                 case '+':
-                    this.addToken(TokenType.PLUS, '+');
+                    if (this.peek() === '+') {
+                        this.advance();
+                        this.addToken(TokenType.INCREMENT, '++');
+                    } else if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.PLUS_ASSIGN, '+=');
+                    } else {
+                        this.addToken(TokenType.PLUS, '+');
+                    }
                     break;
                 case '-':
-                    this.addToken(TokenType.MINUS, '-');
+                    if (this.peek() === '-') {
+                        this.advance();
+                        this.addToken(TokenType.DECREMENT, '--');
+                    } else if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.MINUS_ASSIGN, '-=');
+                    } else {
+                        this.addToken(TokenType.MINUS, '-');
+                    }
                     break;
                 case '*':
-                    this.addToken(TokenType.MULTIPLY, '*');
+                    if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.MULTIPLY_ASSIGN, '*=');
+                    } else {
+                        this.addToken(TokenType.MULTIPLY, '*');
+                    }
                     break;
                 case '/':
                     if (this.peek() === '/') {
@@ -1000,9 +1405,15 @@
                             this.advance(); // consume '*'
                             this.advance(); // consume '/'
                         }
+                    } else if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.DIVIDE_ASSIGN, '/=');
                     } else {
                         this.addToken(TokenType.DIVIDE, '/');
                     }
+                    break;
+                case '%':
+                    this.addToken(TokenType.MODULO, '%');
                     break;
                 case '=':
                     if (this.peek() === '=') {
@@ -1016,19 +1427,76 @@
                     if (this.peek() === '=') {
                         this.advance();
                         this.addToken(TokenType.NOT_EQUALS, '!=');
+                    } else {
+                        this.addToken(TokenType.LOGICAL_NOT, '!');
                     }
                     break;
                 case '<':
-                    this.addToken(TokenType.LESS_THAN, '<');
+                    if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.LESS_EQUAL, '<=');
+                    } else if (this.peek() === '<') {
+                        this.advance();
+                        this.addToken(TokenType.LEFT_SHIFT, '<<');
+                    } else {
+                        this.addToken(TokenType.LESS_THAN, '<');
+                    }
                     break;
                 case '>':
-                    this.addToken(TokenType.GREATER_THAN, '>');
+                    if (this.peek() === '=') {
+                        this.advance();
+                        this.addToken(TokenType.GREATER_EQUAL, '>=');
+                    } else if (this.peek() === '>') {
+                        this.advance();
+                        if (this.peek() === '>') {
+                            this.advance();
+                            this.addToken(TokenType.UNSIGNED_RIGHT_SHIFT, '>>>');
+                        } else {
+                            this.addToken(TokenType.RIGHT_SHIFT, '>>');
+                        }
+                    } else {
+                        this.addToken(TokenType.GREATER_THAN, '>');
+                    }
+                    break;
+                case '&':
+                    if (this.peek() === '&') {
+                        this.advance();
+                        this.addToken(TokenType.LOGICAL_AND, '&&');
+                    } else {
+                        this.addToken(TokenType.BITWISE_AND, '&');
+                    }
+                    break;
+                case '|':
+                    if (this.peek() === '|') {
+                        this.advance();
+                        this.addToken(TokenType.LOGICAL_OR, '||');
+                    } else {
+                        this.addToken(TokenType.BITWISE_OR, '|');
+                    }
+                    break;
+                case '^':
+                    this.addToken(TokenType.BITWISE_XOR, '^');
+                    break;
+                case '~':
+                    this.addToken(TokenType.BITWISE_NOT, '~');
+                    break;
+                case '?':
+                    this.addToken(TokenType.TERNARY, '?');
+                    break;
+                case ':':
+                    this.addToken(TokenType.COLON, ':');
                     break;
                 case '"':
                     // Put the quote back and scan string
                     this.position--;
                     this.column--;
                     this.scanString();
+                    break;
+                case '\'':
+                    // Put the quote back and scan char
+                    this.position--;
+                    this.column--;
+                    this.scanChar();
                     break;
                 default:
                     if (this.isDigit(char)) {
@@ -1322,16 +1790,102 @@
         
         // Parse expression
         expression() {
-            return this.assignment();
+            return this.ternary();
+        }
+        
+        // Parse ternary expression
+        ternary() {
+            let expr = this.logicalOr();
+            
+            if (this.match(window.JavaLexer.TokenType.TERNARY)) {
+                const consequent = this.expression();
+                this.consume(window.JavaLexer.TokenType.COLON, "Expected ':' after ternary consequent");
+                const alternate = this.expression();
+                expr = new window.JavaAST.TernaryExpression(expr, consequent, alternate);
+            }
+            
+            return expr;
+        }
+        
+        // Parse logical OR
+        logicalOr() {
+            let expr = this.logicalAnd();
+            
+            while (this.match(window.JavaLexer.TokenType.LOGICAL_OR)) {
+                const operator = this.previous().value;
+                const right = this.logicalAnd();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse logical AND
+        logicalAnd() {
+            let expr = this.bitwiseOr();
+            
+            while (this.match(window.JavaLexer.TokenType.LOGICAL_AND)) {
+                const operator = this.previous().value;
+                const right = this.bitwiseOr();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse bitwise OR
+        bitwiseOr() {
+            let expr = this.bitwiseXor();
+            
+            while (this.match(window.JavaLexer.TokenType.BITWISE_OR)) {
+                const operator = this.previous().value;
+                const right = this.bitwiseXor();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse bitwise XOR
+        bitwiseXor() {
+            let expr = this.bitwiseAnd();
+            
+            while (this.match(window.JavaLexer.TokenType.BITWISE_XOR)) {
+                const operator = this.previous().value;
+                const right = this.bitwiseAnd();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse bitwise AND
+        bitwiseAnd() {
+            let expr = this.assignment();
+            
+            while (this.match(window.JavaLexer.TokenType.BITWISE_AND)) {
+                const operator = this.previous().value;
+                const right = this.assignment();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
         }
         
         // Parse assignment
         assignment() {
             const expr = this.equality();
             
-            if (this.match(window.JavaLexer.TokenType.ASSIGN)) {
+            if (this.match(
+                window.JavaLexer.TokenType.ASSIGN,
+                window.JavaLexer.TokenType.PLUS_ASSIGN,
+                window.JavaLexer.TokenType.MINUS_ASSIGN,
+                window.JavaLexer.TokenType.MULTIPLY_ASSIGN,
+                window.JavaLexer.TokenType.DIVIDE_ASSIGN
+            )) {
+                const operator = this.previous().value;
                 const right = this.assignment();
-                return new window.JavaAST.AssignmentExpression(expr, right);
+                return new window.JavaAST.AssignmentExpression(expr, right, operator);
             }
             
             return expr;
@@ -1352,9 +1906,31 @@
         
         // Parse comparison
         comparison() {
+            let expr = this.shift();
+            
+            while (this.match(
+                window.JavaLexer.TokenType.GREATER_THAN,
+                window.JavaLexer.TokenType.LESS_THAN,
+                window.JavaLexer.TokenType.GREATER_EQUAL,
+                window.JavaLexer.TokenType.LESS_EQUAL
+            )) {
+                const operator = this.previous().value;
+                const right = this.shift();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse shift operations
+        shift() {
             let expr = this.term();
             
-            while (this.match(window.JavaLexer.TokenType.GREATER_THAN, window.JavaLexer.TokenType.LESS_THAN)) {
+            while (this.match(
+                window.JavaLexer.TokenType.LEFT_SHIFT,
+                window.JavaLexer.TokenType.RIGHT_SHIFT,
+                window.JavaLexer.TokenType.UNSIGNED_RIGHT_SHIFT
+            )) {
                 const operator = this.previous().value;
                 const right = this.term();
                 expr = new window.JavaAST.BinaryExpression(expr, operator, right);
@@ -1376,14 +1952,58 @@
             return expr;
         }
         
-        // Parse factor (multiplication/division)
+        // Parse factor (multiplication/division/modulo)
         factor() {
+            let expr = this.unary();
+            
+            while (this.match(
+                window.JavaLexer.TokenType.DIVIDE,
+                window.JavaLexer.TokenType.MULTIPLY,
+                window.JavaLexer.TokenType.MODULO
+            )) {
+                const operator = this.previous().value;
+                const right = this.unary();
+                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+            }
+            
+            return expr;
+        }
+        
+        // Parse unary expressions
+        unary() {
+            if (this.match(
+                window.JavaLexer.TokenType.LOGICAL_NOT,
+                window.JavaLexer.TokenType.MINUS,
+                window.JavaLexer.TokenType.PLUS,
+                window.JavaLexer.TokenType.BITWISE_NOT
+            )) {
+                const operator = this.previous().value;
+                const right = this.unary();
+                return new window.JavaAST.UnaryExpression(operator, right, true);
+            }
+            
+            if (this.match(
+                window.JavaLexer.TokenType.INCREMENT,
+                window.JavaLexer.TokenType.DECREMENT
+            )) {
+                const operator = this.previous().value;
+                const right = this.postfix();
+                return new window.JavaAST.UnaryExpression(operator, right, true);
+            }
+            
+            return this.postfix();
+        }
+        
+        // Parse postfix expressions
+        postfix() {
             let expr = this.call();
             
-            while (this.match(window.JavaLexer.TokenType.DIVIDE, window.JavaLexer.TokenType.MULTIPLY)) {
+            if (this.match(
+                window.JavaLexer.TokenType.INCREMENT,
+                window.JavaLexer.TokenType.DECREMENT
+            )) {
                 const operator = this.previous().value;
-                const right = this.call();
-                expr = new window.JavaAST.BinaryExpression(expr, operator, right);
+                expr = new window.JavaAST.UnaryExpression(operator, expr, false);
             }
             
             return expr;
@@ -1454,6 +2074,12 @@
                     case window.JavaLexer.TokenType.IF:
                     case window.JavaLexer.TokenType.WHILE:
                     case window.JavaLexer.TokenType.FOR:
+                    case window.JavaLexer.TokenType.DO:
+                    case window.JavaLexer.TokenType.SWITCH:
+                    case window.JavaLexer.TokenType.TRY:
+                    case window.JavaLexer.TokenType.THROW:
+                    case window.JavaLexer.TokenType.BREAK:
+                    case window.JavaLexer.TokenType.CONTINUE:
                     case window.JavaLexer.TokenType.RETURN:
                         return;
                 }
@@ -2726,8 +3352,79 @@ Use this file structure to understand the project layout. You can read any of th
                     this.logger.error('App', 'Chat pane not found!');
                 }
             } else {
-                this.logger.log('App', 'Showing file editor for tab', { tabId });
-                this.showFileEditor(tabId);
+                // For file tabs, find existing file editor pane or create one
+                let filePane = this.elements.editorContent.querySelector('.file-editor-pane');
+                if (filePane) {
+                    // Update existing file editor with new content
+                    this.logger.log('App', 'Found existing file editor pane');
+                    filePane.classList.add('active');
+                    this.updateFileEditorContent(tabId, filePane);
+                } else {
+                    // Create new file editor pane
+                    this.logger.log('App', 'Creating new file editor for tab', { tabId });
+                    this.showFileEditor(tabId);
+                }
+            }
+        }
+
+        updateFileEditorContent(tabId, filePane) {
+            const tabData = this.openTabs.get(tabId);
+            if (!tabData) {
+                this.logger.error('App', 'No tab data found for file editor update', { tabId });
+                return;
+            }
+            
+            // Update file path display
+            const filePathElement = filePane.querySelector('.file-path');
+            if (filePathElement) {
+                filePathElement.textContent = tabData.filePath;
+            }
+            
+            // Update editor content
+            if (tabData.editor) {
+                tabData.editor.setValue(tabData.content);
+                this.logger.log('App', 'Updated file editor content', { filePath: tabData.filePath });
+            } else {
+                this.logger.warn('App', 'No editor instance found for tab', { tabId });
+                // Reinitialize the editor if needed
+                this.initializeFileEditor(tabId, filePane);
+            }
+        }
+
+        initializeFileEditor(tabId, filePane) {
+            const tabData = this.openTabs.get(tabId);
+            if (!tabData) return;
+            
+            const editorContainer = filePane.querySelector('.file-editor-content');
+            if (!editorContainer) return;
+            
+            this.logger.log('App', 'Initializing editor for reused pane', { tabId });
+            
+            try {
+                const editor = new window.CodeEditor(editorContainer);
+                
+                if (window.JavaPlugin) {
+                    const javaPlugin = new window.JavaPlugin();
+                    editor.registerPlugin('java', javaPlugin);
+                    
+                    const fileExt = tabData.filePath.toLowerCase().split('.').pop();
+                    if (fileExt === 'java') {
+                        editor.setLanguage('java');
+                    }
+                }
+                
+                editor.setValue(tabData.content);
+                tabData.editor = editor;
+                
+                // Set up content change handler
+                editor.onContentChange = () => {
+                    tabData.content = editor.getValue();
+                    tabData.isDirty = true;
+                    this.updateTabTitle(tabId);
+                };
+                
+            } catch (error) {
+                this.logger.error('App', 'Failed to initialize editor for reused pane', error);
             }
         }
 
@@ -2763,14 +3460,18 @@ Use this file structure to understand the project layout. You can read any of th
             const tabData = this.openTabs.get(tabId);
             if (!tabData) return;
             
-            // Remove existing file editor pane
-            const existingPane = this.elements.editorContent.querySelector('.file-editor-pane');
-            if (existingPane) {
-                existingPane.remove();
+            // Check if file editor pane already exists
+            let pane = this.elements.editorContent.querySelector('.file-editor-pane');
+            
+            if (pane) {
+                // Reuse existing pane
+                pane.classList.add('active');
+                this.updateFileEditorContent(tabId, pane);
+                return;
             }
             
-            // Create file editor pane
-            const pane = document.createElement('div');
+            // Create new file editor pane
+            pane = document.createElement('div');
             pane.className = 'tab-pane file-editor-pane active';
             pane.innerHTML = `
                 <div class="file-actions">
@@ -3016,23 +3717,73 @@ Use this file structure to understand the project layout. You can read any of th
 
         createProgressMessage(message) {
             const messageEl = document.createElement('div');
-            messageEl.className = 'message progress';
+            messageEl.className = 'message assistant loading';
             messageEl.innerHTML = `
-                <div class="progress-bar-container">
-                    <div class="progress-bar-fill" style="width: 0%"></div>
+                <div class="loading-animation">
+                    <span class="loading-star">✻</span>
+                    <span class="loading-text">Thinking...</span>
                 </div>
             `;
             this.elements.messages.appendChild(messageEl);
             this.elements.messages.scrollTop = this.elements.messages.scrollHeight;
+            
+            // Start the loading animation
+            this.startLoadingAnimation(messageEl);
+            
             return messageEl;
         }
 
+        startLoadingAnimation(messageEl) {
+            const starElement = messageEl.querySelector('.loading-star');
+            const textElement = messageEl.querySelector('.loading-text');
+            
+            if (!starElement || !textElement) return;
+            
+            // Star characters to cycle through
+            const stars = ['✻', '✧', '✦', '✶', '✴', '✵', '⋆', '★', '*', '✱'];
+            
+            // Fun loading verbs
+            const verbs = [
+                'Thinking...', 'Creating...', 'Coding...', 'Processing...', 
+                'Analyzing...', 'Computing...', 'Generating...', 'Building...',
+                'Crafting...', 'Designing...', 'Solving...', 'Working...',
+                'Magic-ing...', 'Brewing...', 'Conjuring...', 'Killing it...'
+            ];
+            
+            let starIndex = 0;
+            let textIndex = 0;
+            let animationFrame = 0;
+            
+            const animate = () => {
+                if (!messageEl.parentNode || !messageEl.classList.contains('loading')) {
+                    return; // Stop animation if element is removed or no longer loading
+                }
+                
+                // Update star (faster cycle)
+                if (animationFrame % 8 === 0) {
+                    starIndex = (starIndex + 1) % stars.length;
+                    starElement.textContent = stars[starIndex];
+                }
+                
+                // Update text (slower cycle)  
+                if (animationFrame % 60 === 0) {
+                    textIndex = (textIndex + 1) % verbs.length;
+                    textElement.textContent = verbs[textIndex];
+                }
+                
+                animationFrame++;
+                setTimeout(animate, 100); // 10 FPS
+            };
+            
+            animate();
+        }
+
         updateProgressMessage(message, current, total) {
-            if (this.currentStreamingMessage && this.currentStreamingMessage.classList.contains('progress')) {
-                const fill = this.currentStreamingMessage.querySelector('.progress-bar-fill');
-                if (fill) {
-                    const percentage = Math.round((current / total) * 100);
-                    fill.style.width = `${percentage}%`;
+            // Legacy method - now just updates the loading text if needed
+            if (this.currentStreamingMessage && this.currentStreamingMessage.classList.contains('loading')) {
+                const textElement = this.currentStreamingMessage.querySelector('.loading-text');
+                if (textElement && message) {
+                    textElement.textContent = message;
                 }
             }
         }
@@ -3374,8 +4125,8 @@ Use this file structure to understand the project layout. You can read any of th
                     // onProgress
                     !isHeartbeat ? (current, total, message) => {
                         if (current === null) {
-                            // Replace progress message with streaming message
-                            if (this.currentStreamingMessage && this.currentStreamingMessage.classList.contains('progress')) {
+                            // Replace loading message with streaming message
+                            if (this.currentStreamingMessage && this.currentStreamingMessage.classList.contains('loading')) {
                                 this.currentStreamingMessage.remove();
                                 this.currentStreamingMessage = this.createStreamingMessage();
                             }
@@ -4286,11 +5037,10 @@ Use this file structure to understand the project layout. You can read any of th
                 .tab-pane {
                     display: none;
                     height: 100%;
-                    flex-direction: column;
                 }
 
                 .tab-pane.active {
-                    display: flex;
+                    display: block;
                 }
 
                 .chat-container {
@@ -4401,7 +5151,7 @@ Use this file structure to understand the project layout. You can read any of th
                     border-left: 3px solid #ffa726;
                 }
 
-                .message.progress {
+                .message.loading {
                     border-left: 3px solid #2196f3;
                     padding: 8px 16px;
                     min-height: 20px;
@@ -4409,20 +5159,25 @@ Use this file structure to understand the project layout. You can read any of th
                     align-items: center;
                 }
 
-                .progress-bar-container {
-                    width: 100%;
-                    height: 8px;
-                    background: #444;
-                    border-radius: 4px;
-                    overflow: hidden;
+                .loading-animation {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    font-size: 14px;
+                    color: #e0e0e0;
                 }
 
-                .progress-bar-fill {
-                    height: 100%;
-                    background: linear-gradient(90deg, #2196f3, #64b5f6);
-                    border-radius: 4px;
-                    transition: width 0.3s ease;
+                .loading-star {
+                    font-size: 16px;
+                    color: #2196f3;
+                    transition: color 0.2s ease;
                 }
+
+                .loading-text {
+                    color: #aaa;
+                    font-style: italic;
+                }
+
 
                 .message.tool-result {
                     border-left: 3px solid #9c27b0;
