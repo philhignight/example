@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Sun Aug  3 03:27:31 AM UTC 2025
+// Generated on Sun Aug  3 03:44:00 AM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -6100,9 +6100,34 @@ Use this file structure to understand the project layout. You can read any of th
                             });
                             
                             // Send to backend for conversion
-                            const jsonResult = await window.ServerCommunicator.convertDocxToJson(base64Content);
+                            const response = await window.ServerCommunicator.convertDocxToJson(base64Content);
                             
-                            this.logger.log('DragDrop', 'DOCX converted to JSON', { 
+                            this.logger.log('DragDrop', 'Backend response received', { 
+                                fileName: file.name,
+                                responseLength: response.length 
+                            });
+                            
+                            // Check if response is an error
+                            let parsedResponse;
+                            try {
+                                parsedResponse = JSON.parse(response);
+                                if (parsedResponse.error) {
+                                    throw new Error(parsedResponse.message || 'DOCX conversion failed');
+                                }
+                            } catch (parseError) {
+                                // If it's not JSON, assume it's successful raw JSON content
+                                if (parseError.message.includes('DOCX conversion failed') || 
+                                    parseError.message.includes('conversion failed')) {
+                                    throw parseError;
+                                }
+                                // Otherwise, treat as successful JSON response
+                                parsedResponse = null;
+                            }
+                            
+                            // Use the raw response as JSON content if parsing failed (successful conversion)
+                            const jsonResult = parsedResponse ? JSON.stringify(parsedResponse, null, 2) : response;
+                            
+                            this.logger.log('DragDrop', 'DOCX converted to JSON successfully', { 
                                 fileName: file.name,
                                 jsonLength: jsonResult.length 
                             });
