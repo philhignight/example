@@ -1,5 +1,5 @@
 // Streaming AI Chat Overlay - Combined Build
-// Generated on Fri Aug  1 11:19:10 PM UTC 2025
+// Generated on Sun Aug  3 03:27:31 AM UTC 2025
 
 // ===== diff-viewer.js =====
 (function() {
@@ -6062,13 +6062,96 @@ Use this file structure to understand the project layout. You can read any of th
             this.updateFileExplorer();
             
             // Show success message
-            this.updateStatus(`Added ${processedCount} file(s) to project`, 'success');
+            this.updateStatus(`Processed ${processedCount} file(s) - DOCX files converted to JSON`, 'success');
             setTimeout(() => {
                 this.updateStatus('Ready', 'ready');
             }, 2000);
         }
 
         async processDroppedFile(file, targetPath) {
+            // Check if this is a DOCX file
+            const isDocxFile = file.name.toLowerCase().endsWith('.docx') || 
+                             file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            
+            if (isDocxFile) {
+                return this.processDocxFile(file, targetPath);
+            } else {
+                return this.processRegularFile(file, targetPath);
+            }
+        }
+        
+        async processDocxFile(file, targetPath) {
+            return new Promise(async (resolve, reject) => {
+                try {
+                    this.logger.log('DragDrop', 'Processing DOCX file', { fileName: file.name });
+                    this.updateStatus('Converting DOCX to JSON...', 'processing');
+                    
+                    // Read file as base64
+                    const reader = new FileReader();
+                    
+                    reader.onload = async (e) => {
+                        try {
+                            // Extract base64 content (remove data:...;base64, prefix)
+                            const base64Content = e.target.result.split(',')[1];
+                            
+                            this.logger.log('DragDrop', 'DOCX file read as base64', { 
+                                fileName: file.name,
+                                base64Length: base64Content.length 
+                            });
+                            
+                            // Send to backend for conversion
+                            const jsonResult = await window.ServerCommunicator.convertDocxToJson(base64Content);
+                            
+                            this.logger.log('DragDrop', 'DOCX converted to JSON', { 
+                                fileName: file.name,
+                                jsonLength: jsonResult.length 
+                            });
+                            
+                            // Construct file path with .json extension
+                            const baseName = file.name.replace(/\.docx$/i, '');
+                            const jsonFileName = `${baseName}.json`;
+                            const fullPath = targetPath === '/' ? `/${jsonFileName}` : `${targetPath}/${jsonFileName}`;
+                            
+                            // Store the JSON result in the file system
+                            const success = this.fileSystem.writeFile(this.currentProject, fullPath, jsonResult);
+                            
+                            if (success) {
+                                this.logger.log('DragDrop', 'DOCX JSON stored successfully', { 
+                                    originalFile: file.name,
+                                    jsonFile: jsonFileName,
+                                    fullPath,
+                                    size: jsonResult.length 
+                                });
+                                this.updateStatus('DOCX converted and stored as JSON', 'success');
+                                resolve();
+                            } else {
+                                reject(new Error('Failed to write JSON file to storage'));
+                            }
+                        } catch (error) {
+                            this.logger.error('DragDrop', 'DOCX conversion failed', { 
+                                fileName: file.name, 
+                                error: error.message 
+                            });
+                            this.updateStatus('DOCX conversion failed', 'error');
+                            reject(error);
+                        }
+                    };
+                    
+                    reader.onerror = () => {
+                        reject(new Error('Failed to read DOCX file'));
+                    };
+                    
+                    // Read file as data URL to get base64
+                    reader.readAsDataURL(file);
+                    
+                } catch (error) {
+                    this.logger.error('DragDrop', 'DOCX processing error', error);
+                    reject(error);
+                }
+            });
+        }
+        
+        async processRegularFile(file, targetPath) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 
