@@ -1,6 +1,6 @@
 // DMDCGPT Combined JavaScript Build
-// Generated on Mon Aug  4 09:18:37 PM UTC 2025
-// Version: v1.2.3-docx-fix-1754342317
+// Generated on Mon Aug  4 09:21:47 PM UTC 2025
+// Version: v1.2.3-docx-fix-1754342507
 
 // ===== diff-viewer.js =====
 (function() {
@@ -4689,8 +4689,10 @@ Use this file structure to understand the project layout. You can read any of th
                 <span>Files</span>
                 <div class="file-explorer-buttons">
                     <button id="new-file-btn" class="btn btn-small">+ File</button>
-                    <button id="upload-file-btn" class="btn btn-small">📤 Upload</button>
+                    <button id="upload-file-btn" class="btn btn-small">📤 Files</button>
+                    <button id="upload-folder-btn" class="btn btn-small">📁 Folder</button>
                     <input type="file" id="file-upload-input" multiple style="display: none;" accept="*/*">
+                    <input type="file" id="folder-upload-input" webkitdirectory multiple style="display: none;">
                 </div>
             `;
             
@@ -4737,6 +4739,24 @@ Use this file structure to understand the project layout. You can read any of th
                         // Use existing drag-and-drop logic for file processing
                         this.handleFileUpload(Array.from(e.target.files));
                         // Clear the input so the same files can be selected again
+                        e.target.value = '';
+                    }
+                });
+            }
+            
+            // Bind upload folder button
+            const uploadFolderBtn = explorer.querySelector('#upload-folder-btn');
+            const folderInput = explorer.querySelector('#folder-upload-input');
+            if (uploadFolderBtn && folderInput) {
+                uploadFolderBtn.addEventListener('click', () => {
+                    folderInput.click(); // Trigger folder selection dialog
+                });
+                
+                folderInput.addEventListener('change', (e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                        // Process folder contents with proper paths
+                        this.handleFolderUpload(Array.from(e.target.files));
+                        // Clear the input so the same folder can be selected again
                         e.target.value = '';
                     }
                 });
@@ -6057,6 +6077,60 @@ Use this file structure to understand the project layout. You can read any of th
             return '/' + pathParts.join('/');
         }
 
+        async handleFolderUpload(files) {
+            this.logger.log('FolderUpload', 'Processing uploaded folder', { 
+                fileCount: files.length,
+                projectId: this.currentProject 
+            });
+
+            let processedCount = 0;
+            let errorCount = 0;
+            
+            for (const file of files) {
+                try {
+                    // Use the full webkitRelativePath as the target path
+                    const filePath = '/' + file.webkitRelativePath;
+                    
+                    // Skip the folder detection since these are actual files from folder upload
+                    await this.processFileFromFolder(file, filePath);
+                    processedCount++;
+                } catch (error) {
+                    errorCount++;
+                    this.logger.error('FolderUpload', 'Failed to process file', { 
+                        fileName: file.name,
+                        relativePath: file.webkitRelativePath,
+                        error: error.message 
+                    });
+                }
+            }
+
+            // Update file explorer to show new files
+            this.updateFileExplorer();
+            
+            // Show informative status message
+            let statusMessage = '';
+            let statusType = 'ready';
+            
+            if (processedCount > 0) {
+                statusMessage = `Uploaded folder: ${processedCount} file(s)`;
+                if (errorCount > 0) {
+                    statusMessage += `, ${errorCount} error(s)`;
+                }
+                statusType = 'success';
+            } else if (errorCount > 0) {
+                statusMessage = `Failed to upload folder: ${errorCount} error(s)`;
+                statusType = 'error';
+            } else {
+                statusMessage = 'No files uploaded from folder';
+                statusType = 'error';
+            }
+            
+            this.updateStatus(statusMessage, statusType);
+            setTimeout(() => {
+                this.updateStatus('Ready', 'ready');
+            }, 3000);
+        }
+
         async handleFileUpload(files, targetPath = '/') {
             this.logger.log('FileUpload', 'Processing uploaded files', { 
                 fileCount: files.length, 
@@ -6190,6 +6264,140 @@ Use this file structure to understand the project layout. You can read any of th
             setTimeout(() => {
                 this.updateStatus('Ready', 'ready');
             }, 3000);
+        }
+
+        async processFileFromFolder(file, filePath) {
+            // For folder uploads, we know these are real files, not folders
+            // So we skip the folder detection and go straight to file processing
+            
+            // Check if this is a DOCX file
+            const isDocxFile = file.name.toLowerCase().endsWith('.docx') || 
+                             file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            
+            if (isDocxFile) {
+                return this.processDocxFileWithPath(file, filePath);
+            } else {
+                return this.processRegularFileWithPath(file, filePath);
+            }
+        }
+
+        async processDocxFileWithPath(file, filePath) {
+            return new Promise(async (resolve, reject) => {
+                try {
+                    this.logger.log('FolderUpload', 'Processing DOCX file from folder', { 
+                        fileName: file.name,
+                        filePath 
+                    });
+                    this.updateStatus('Converting DOCX to JSON...', 'processing');
+                    
+                    // Read file as base64
+                    const reader = new FileReader();
+                    
+                    reader.onload = async (e) => {
+                        try {
+                            // Extract base64 content (remove data:...;base64, prefix)
+                            const base64Content = e.target.result.split(',')[1];
+                            
+                            // Send to backend for conversion
+                            const response = await window.ServerCommunicator.convertDocxToJson(base64Content);
+                            
+                            console.log('🔍 Full backend response:', response);
+                            
+                            // Check if response is an error
+                            let parsedResponse;
+                            try {
+                                parsedResponse = JSON.parse(response);
+                                if (parsedResponse.error) {
+                                    throw new Error(parsedResponse.message || 'DOCX conversion failed');
+                                }
+                            } catch (parseError) {
+                                if (parseError.message.includes('DOCX conversion failed') || 
+                                    parseError.message.includes('conversion failed')) {
+                                    throw parseError;
+                                }
+                                parsedResponse = null;
+                            }
+                            
+                            // Use the raw response as JSON content if parsing failed (successful conversion)
+                            const jsonResult = parsedResponse ? JSON.stringify(parsedResponse, null, 2) : response;
+                            
+                            // Convert .docx path to .json path
+                            const jsonFilePath = filePath.replace(/\.docx$/i, '.json');
+                            
+                            // Store the JSON result in the file system
+                            const success = this.fileSystem.writeFile(this.currentProject, jsonFilePath, jsonResult);
+                            
+                            if (success) {
+                                this.logger.log('FolderUpload', 'DOCX JSON stored successfully', { 
+                                    originalFile: file.name,
+                                    jsonPath: jsonFilePath,
+                                    size: jsonResult.length 
+                                });
+                                resolve();
+                            } else {
+                                reject(new Error('Failed to write JSON file to storage'));
+                            }
+                        } catch (error) {
+                            this.logger.error('FolderUpload', 'DOCX conversion failed', { 
+                                fileName: file.name, 
+                                error: error.message 
+                            });
+                            reject(error);
+                        }
+                    };
+                    
+                    reader.onerror = () => {
+                        reject(new Error('Failed to read DOCX file'));
+                    };
+                    
+                    // Read file as data URL to get base64
+                    reader.readAsDataURL(file);
+                    
+                } catch (error) {
+                    this.logger.error('FolderUpload', 'DOCX processing error', error);
+                    reject(error);
+                }
+            });
+        }
+        
+        async processRegularFileWithPath(file, filePath) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    try {
+                        const content = e.target.result;
+                        
+                        // Store the file using the full folder path
+                        const success = this.fileSystem.writeFile(this.currentProject, filePath, content);
+                        
+                        if (success) {
+                            this.logger.log('FolderUpload', 'File added successfully', { 
+                                fileName: file.name,
+                                filePath,
+                                size: file.size 
+                            });
+                            resolve();
+                        } else {
+                            reject(new Error('Failed to write file to storage'));
+                        }
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                
+                reader.onerror = () => {
+                    reject(new Error('Failed to read file'));
+                };
+                
+                // Read file as text for most file types
+                if (file.type.startsWith('text/') || file.name.match(/\.(js|json|html|css|md|txt|java|py|cpp|c|h|xml|yml|yaml|toml|ini|cfg|conf)$/i)) {
+                    reader.readAsText(file);
+                } else {
+                    // For binary files, read as data URL or handle as needed
+                    reader.readAsText(file); // For now, try to read as text
+                }
+            });
         }
 
         async processDroppedFile(file, targetPath) {
