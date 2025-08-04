@@ -1,5 +1,5 @@
 # Java DMDC GPT Server - Combined Build
-# Generated on Mon Aug  4 04:55:48 PM UTC 2025
+# Generated on Mon Aug  4 05:15:32 PM UTC 2025
 
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -246,7 +246,7 @@ import java.util.concurrent.TimeUnit;
 public class DMDCGPTApplication {
     private final PlatformAdapter adapter;
     private final ScheduledExecutorService scheduler;
-    private volatile boolean running = true;
+    public volatile boolean running = true;
     
     public DMDCGPTApplication(PlatformAdapter adapter) {
         this.adapter = adapter;
@@ -328,16 +328,29 @@ public class DMDCGPTApplication {
         
         scheduler.shutdown();
         try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+            if (!scheduler.awaitTermination(3, TimeUnit.SECONDS)) {
+                System.out.println("Forcing scheduler shutdown...");
                 scheduler.shutdownNow();
+                if (!scheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                    System.err.println("Scheduler did not terminate gracefully");
+                }
             }
         } catch (InterruptedException e) {
+            System.out.println("Shutdown interrupted, forcing termination...");
             scheduler.shutdownNow();
             Thread.currentThread().interrupt();
         }
         
-        adapter.shutdown();
+        try {
+            adapter.shutdown();
+        } catch (Exception e) {
+            System.err.println("Error during adapter shutdown: " + e.getMessage());
+        }
+        
         System.out.println("Application shut down complete");
+        
+        // Force exit if shutdown takes too long
+        System.exit(0);
     }
     
     public static void main(String[] args) {
@@ -353,9 +366,14 @@ public class DMDCGPTApplication {
         DMDCGPTApplication app = new DMDCGPTApplication(adapter);
         app.start();
         
+        // Keep the main thread alive until shutdown
         try {
-            Thread.currentThread().join();
+            while (app.running) {
+                Thread.sleep(1000);
+            }
         } catch (InterruptedException e) {
+            System.out.println("Main thread interrupted, shutting down...");
+            app.shutdown();
             Thread.currentThread().interrupt();
         }
     }
