@@ -1,6 +1,6 @@
 // DMDCGPT Combined JavaScript Build
-// Generated on Mon Aug  4 09:11:24 PM UTC 2025
-// Version: v1.2.3-docx-fix-1754341884
+// Generated on Mon Aug  4 09:17:09 PM UTC 2025
+// Version: v1.2.3-docx-fix-1754342229
 
 // ===== diff-viewer.js =====
 (function() {
@@ -4687,7 +4687,11 @@ Use this file structure to understand the project layout. You can read any of th
             header.className = 'file-explorer-header';
             header.innerHTML = `
                 <span>Files</span>
-                <button id="new-file-btn" class="btn-small">+ File</button>
+                <div class="file-explorer-buttons">
+                    <button id="new-file-btn" class="btn btn-small">+ File</button>
+                    <button id="upload-file-btn" class="btn btn-small">📤 Upload</button>
+                    <input type="file" id="file-upload-input" multiple style="display: none;" accept="*/*">
+                </div>
             `;
             
             // Create file tree container
@@ -4717,6 +4721,24 @@ Use this file structure to understand the project layout. You can read any of th
             if (newFileBtn) {
                 newFileBtn.addEventListener('click', () => {
                     this.createNewFile();
+                });
+            }
+            
+            // Bind upload file button
+            const uploadBtn = explorer.querySelector('#upload-file-btn');
+            const fileInput = explorer.querySelector('#file-upload-input');
+            if (uploadBtn && fileInput) {
+                uploadBtn.addEventListener('click', () => {
+                    fileInput.click(); // Trigger file selection dialog
+                });
+                
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                        // Use existing drag-and-drop logic for file processing
+                        this.handleFileUpload(Array.from(e.target.files));
+                        // Clear the input so the same files can be selected again
+                        e.target.value = '';
+                    }
                 });
             }
             
@@ -6035,6 +6057,70 @@ Use this file structure to understand the project layout. You can read any of th
             return '/' + pathParts.join('/');
         }
 
+        async handleFileUpload(files, targetPath = '/') {
+            this.logger.log('FileUpload', 'Processing uploaded files', { 
+                fileCount: files.length, 
+                targetPath,
+                projectId: this.currentProject 
+            });
+
+            let processedCount = 0;
+            let folderCount = 0;
+            let errorCount = 0;
+            
+            for (const file of files) {
+                try {
+                    await this.processDroppedFile(file, targetPath);
+                    processedCount++;
+                } catch (error) {
+                    if (error.message.includes('Cannot process folder')) {
+                        folderCount++;
+                        this.logger.warn('FileUpload', 'Folder skipped', { 
+                            fileName: file.name 
+                        });
+                    } else {
+                        errorCount++;
+                        this.logger.error('FileUpload', 'Failed to process file', { 
+                            fileName: file.name, 
+                            error: error.message 
+                        });
+                    }
+                }
+            }
+
+            // Update file explorer to show new files
+            this.updateFileExplorer();
+            
+            // Show informative status message
+            let statusMessage = '';
+            let statusType = 'ready';
+            
+            if (processedCount > 0) {
+                statusMessage = `Uploaded ${processedCount} file(s)`;
+                if (folderCount > 0) {
+                    statusMessage += `, skipped ${folderCount} folder(s)`;
+                }
+                if (errorCount > 0) {
+                    statusMessage += `, ${errorCount} error(s)`;
+                }
+                statusType = 'success';
+            } else if (folderCount > 0) {
+                statusMessage = `Skipped ${folderCount} folder(s) - select individual files instead`;
+                statusType = 'error';
+            } else if (errorCount > 0) {
+                statusMessage = `Failed to upload ${errorCount} file(s)`;
+                statusType = 'error';
+            } else {
+                statusMessage = 'No files uploaded';
+                statusType = 'error';
+            }
+            
+            this.updateStatus(statusMessage, statusType);
+            setTimeout(() => {
+                this.updateStatus('Ready', 'ready');
+            }, 3000);
+        }
+
         async handleFileDrop(e, targetPath) {
             const files = Array.from(e.dataTransfer.files);
             
@@ -7214,6 +7300,12 @@ Use this file structure to understand the project layout. You can read any of th
                     font-size: 14px;
                     font-weight: 500;
                     color: #e0e0e0;
+                }
+                
+                .file-explorer-buttons {
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
                 }
 
                 .no-project, .empty-state {
