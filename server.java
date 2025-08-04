@@ -1,10 +1,8 @@
 // DMDCGPT Server - Combined Java Build
-// Generated on Mon Aug  4 07:32:03 PM UTC 2025
-// Version: v1.2.3-docx-fix-1754335923
+// Generated on Mon Aug  4 08:19:44 PM UTC 2025
+// Version: v1.2.3-docx-fix-1754338784
 
-/*
-=== pom.xml ===
-
+// ===== pom.xml =====
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -62,7 +60,6 @@
         </plugins>
     </build>
 </project>
-*/
 
 // ===== src/main/java/com/example/ClipboardProtocol.java =====
 package com.example;

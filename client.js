@@ -1,6 +1,6 @@
 // DMDCGPT Combined JavaScript Build
-// Generated on Mon Aug  4 07:32:03 PM UTC 2025
-// Version: v1.2.3-docx-fix-1754335923
+// Generated on Mon Aug  4 08:19:44 PM UTC 2025
+// Version: v1.2.3-docx-fix-1754338784
 
 // ===== diff-viewer.js =====
 (function() {
