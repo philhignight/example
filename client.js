@@ -1,6 +1,6 @@
 // DMDCGPT Combined JavaScript Build
-// Generated on Mon Aug  4 08:19:44 PM UTC 2025
-// Version: v1.2.3-docx-fix-1754338784
+// Generated on Mon Aug  4 09:11:24 PM UTC 2025
+// Version: v1.2.3-docx-fix-1754341884
 
 // ===== diff-viewer.js =====
 (function() {
@@ -6050,30 +6050,89 @@ Use this file structure to understand the project layout. You can read any of th
             });
 
             let processedCount = 0;
+            let folderCount = 0;
+            let errorCount = 0;
             
             for (const file of files) {
                 try {
                     await this.processDroppedFile(file, targetPath);
                     processedCount++;
                 } catch (error) {
-                    this.logger.error('DragDrop', 'Failed to process file', { 
-                        fileName: file.name, 
-                        error 
-                    });
+                    if (error.message.includes('Cannot process folder')) {
+                        folderCount++;
+                        this.logger.warn('DragDrop', 'Folder skipped', { 
+                            fileName: file.name 
+                        });
+                    } else {
+                        errorCount++;
+                        this.logger.error('DragDrop', 'Failed to process file', { 
+                            fileName: file.name, 
+                            error: error.message 
+                        });
+                    }
                 }
             }
 
             // Update file explorer to show new files
             this.updateFileExplorer();
             
-            // Show success message
-            this.updateStatus(`Processed ${processedCount} file(s) - DOCX files converted to JSON`, 'success');
+            // Show informative status message
+            let statusMessage = '';
+            let statusType = 'ready';
+            
+            if (processedCount > 0) {
+                statusMessage = `Processed ${processedCount} file(s)`;
+                if (folderCount > 0) {
+                    statusMessage += `, skipped ${folderCount} folder(s)`;
+                }
+                if (errorCount > 0) {
+                    statusMessage += `, ${errorCount} error(s)`;
+                }
+                statusType = 'success';
+            } else if (folderCount > 0) {
+                statusMessage = `Skipped ${folderCount} folder(s) - drag individual files instead`;
+                statusType = 'error';
+            } else if (errorCount > 0) {
+                statusMessage = `Failed to process ${errorCount} file(s)`;
+                statusType = 'error';
+            } else {
+                statusMessage = 'No files processed';
+                statusType = 'error';
+            }
+            
+            this.updateStatus(statusMessage, statusType);
             setTimeout(() => {
                 this.updateStatus('Ready', 'ready');
-            }, 2000);
+            }, 3000);
         }
 
         async processDroppedFile(file, targetPath) {
+            // Check if this is actually a directory/folder
+            // Different browsers report folders differently:
+            // - Chrome/Edge: size = 0, type = ""
+            // - Firefox: size = 0, type = "application/x-moz-file"
+            // - Safari: size = 0, type = ""
+            // Also check for lack of file extension as additional indicator
+            const hasNoExtension = !file.name.includes('.');
+            const isFolder = (
+                file.size === 0 && 
+                (file.type === '' || file.type === 'application/x-moz-file') &&
+                hasNoExtension
+            ) || (
+                // Additional check: very large "files" with no type might be folders
+                file.size === 0 && file.type === '' && file.name.indexOf('.') === -1
+            );
+            
+            if (isFolder) {
+                this.logger.warn('DragDrop', 'Folder dropped - not supported', { 
+                    fileName: file.name,
+                    type: file.type,
+                    size: file.size,
+                    hasNoExtension
+                });
+                throw new Error(`Cannot process folder: ${file.name}. Please drag individual files instead.`);
+            }
+            
             // Check if this is a DOCX file
             const isDocxFile = file.name.toLowerCase().endsWith('.docx') || 
                              file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
