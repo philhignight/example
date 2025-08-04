@@ -1,6 +1,6 @@
 // DMDCGPT Server - Combined Java Build
-// Generated on Mon Aug  4 09:17:09 PM UTC 2025
-// Version: v1.2.3-docx-fix-1754342229
+// Generated on Mon Aug  4 09:18:37 PM UTC 2025
+// Version: v1.2.3-docx-fix-1754342317
 
 // ===== pom.xml =====
 <?xml version="1.0" encoding="UTF-8"?>
