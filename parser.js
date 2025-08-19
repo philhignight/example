@@ -9,7 +9,9 @@ class YAMLParser {
     }
 
     this.anchors = {};
-    const lines = yamlString.split('\n');
+    // Handle both Windows (\r\n) and Unix (\n) line endings
+    const normalizedString = yamlString.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalizedString.split('\n');
     const result = this.parseLines(lines);
     return result;
   }
