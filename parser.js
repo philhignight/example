@@ -29,7 +29,7 @@ class YAMLParser {
     } else if (firstLine.includes(':')) {
       return this.parseObject(cleanLines);
     } else {
-      return this.parseScalar(firstLine.trim());
+      return this.parseScalar(firstLine.trim(), lines, 0);
     }
   }
 
@@ -140,7 +140,7 @@ class YAMLParser {
         if (parts.length > 1) {
           anchor = parts[0].substring(1);
           const restValue = parts.slice(1).join(' ');
-          const value = this.parseScalar(restValue);
+          const value = this.parseScalar(restValue, lines, i);
           obj[cleanKey] = value;
           this.anchors[anchor] = value;
           i++;
@@ -149,10 +149,24 @@ class YAMLParser {
       }
 
       if (valueAfterColon) {
-        const value = this.parseScalar(valueAfterColon);
+        const value = this.parseScalar(valueAfterColon, lines, i);
         obj[cleanKey] = value;
         if (anchor) {
           this.anchors[anchor] = value;
+        }
+        
+        // Skip lines that were consumed by parseScalar for line continuation
+        if (valueAfterColon.endsWith('\\') && !valueAfterColon.startsWith('"') && !valueAfterColon.startsWith("'")) {
+          // Count how many continuation lines there are
+          let j = i + 1;
+          while (j < lines.length) {
+            const nextLine = lines[j].trim();
+            if (!nextLine.endsWith('\\')) {
+              i = j; // Skip to the last continuation line
+              break;
+            }
+            j++;
+          }
         }
       } else {
         const childLines = [];
@@ -228,7 +242,7 @@ class YAMLParser {
           
           arr.push(this.parseObject(objectLines));
         } else {
-          arr.push(this.parseScalar(valueAfterDash));
+          arr.push(this.parseScalar(valueAfterDash, lines, i));
           i++;
         }
       } else {
@@ -259,8 +273,75 @@ class YAMLParser {
     return arr;
   }
 
-  parseScalar(value) {
+  parseScalar(value, lines, currentIndex) {
     value = value.trim();
+
+    // Handle line continuation for quoted strings
+    if ((value.startsWith('"') || value.startsWith("'"))) {
+      const quoteChar = value[0];
+      
+      // Check if string ends with backslash (line continuation in quoted string)
+      if (value.endsWith('\\' + quoteChar)) {
+        // String is complete but ends with escaped quote
+        // Do nothing special
+      } else if (value.endsWith('\\')) {
+        // Line continuation within quoted string
+        let fullValue = value.substring(0, value.length - 1); // Remove backslash
+        let i = currentIndex + 1;
+        
+        while (lines && i < lines.length) {
+          let nextLine = lines[i].trim();
+          if (nextLine.endsWith('\\') && !nextLine.endsWith(quoteChar)) {
+            // Another continuation
+            fullValue += nextLine.substring(0, nextLine.length - 1);
+            i++;
+          } else if (nextLine.endsWith(quoteChar)) {
+            // End of string
+            fullValue += nextLine;
+            break;
+          } else {
+            fullValue += nextLine;
+            i++;
+          }
+        }
+        
+        value = fullValue;
+      } else if (!value.endsWith(quoteChar)) {
+        // Multi-line quoted string without backslash continuation
+        let fullValue = value;
+        let i = currentIndex + 1;
+        
+        while (lines && i < lines.length) {
+          const nextLine = lines[i].trim();
+          fullValue += '\n' + nextLine;
+          if (nextLine.endsWith(quoteChar) && !nextLine.endsWith('\\' + quoteChar)) {
+            break;
+          }
+          i++;
+        }
+        
+        value = fullValue;
+      }
+    }
+    
+    // Handle line continuation with backslash for unquoted strings
+    if (!value.startsWith('"') && !value.startsWith("'") && value.endsWith('\\')) {
+      let fullValue = value.substring(0, value.length - 1); // Remove the backslash
+      let i = currentIndex + 1;
+      
+      while (lines && i < lines.length) {
+        const nextLine = lines[i].trim();
+        if (nextLine.endsWith('\\')) {
+          fullValue += ' ' + nextLine.substring(0, nextLine.length - 1);
+          i++;
+        } else {
+          fullValue += ' ' + nextLine;
+          break;
+        }
+      }
+      
+      value = fullValue;
+    }
 
     if (value.startsWith('*')) {
       const anchorName = value.substring(1);
