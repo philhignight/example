@@ -26,6 +26,8 @@ function readConfigFiles(folderPath) {
   const values = parser.parse(valuesContent);
   
   return {
+    configmap: configmap,
+    values: values,
     data: configmap.data || {},
     env: values.env || [],
     entrypoint: values.entrypoint || ''
@@ -82,7 +84,6 @@ function compareConfigs(path1, path2, path3) {
   };
   
   // Create comparison table
-  const table = [];
   const pathNames = {
     path1: path.basename(path1),
     path2: path.basename(path2),
@@ -170,6 +171,59 @@ function compareConfigs(path1, path2, path3) {
   });
   
   console.log('='.repeat(140));
+  
+  // Compare entrypoints
+  console.log('\nENTRYPOINT COMPARISON:');
+  console.log('-'.repeat(100));
+  const entrypoints = {
+    [pathNames.path1]: configs.path1.entrypoint,
+    [pathNames.path2]: configs.path2.entrypoint,
+    [pathNames.path3]: configs.path3.entrypoint
+  };
+  
+  const uniqueEntrypoints = [...new Set(Object.values(entrypoints))];
+  if (uniqueEntrypoints.length === 1) {
+    console.log('✓ All environments use the same entrypoint:');
+    console.log(`  ${uniqueEntrypoints[0]}`);
+  } else {
+    console.log('✗ Entrypoints differ across environments:');
+    Object.entries(entrypoints).forEach(([env, cmd]) => {
+      console.log(`  ${env}: ${cmd || '(not defined)'}`);
+    });
+  }
+  
+  // Compare other values.yaml fields
+  console.log('\nVALUES.YAML ADDITIONAL FIELDS:');
+  console.log('-'.repeat(100));
+  
+  // Get all unique top-level keys from values.yaml (excluding env and entrypoint)
+  const allValuesKeys = new Set();
+  Object.values(configs).forEach(config => {
+    Object.keys(config.values).forEach(key => {
+      if (key !== 'env' && key !== 'entrypoint') {
+        allValuesKeys.add(key);
+      }
+    });
+  });
+  
+  if (allValuesKeys.size > 0) {
+    allValuesKeys.forEach(key => {
+      const v1 = JSON.stringify(configs.path1.values[key]);
+      const v2 = JSON.stringify(configs.path2.values[key]);
+      const v3 = JSON.stringify(configs.path3.values[key]);
+      
+      if (v1 === v2 && v2 === v3) {
+        console.log(`✓ ${key}: All match - ${v1 || 'undefined'}`);
+      } else {
+        console.log(`✗ ${key}: Values differ`);
+        console.log(`    ${pathNames.path1}: ${v1 || 'undefined'}`);
+        console.log(`    ${pathNames.path2}: ${v2 || 'undefined'}`);
+        console.log(`    ${pathNames.path3}: ${v3 || 'undefined'}`);
+      }
+    });
+  } else {
+    console.log('  No additional fields found in values.yaml files');
+  }
   
   // Summary statistics
   const totalKeys = allDataKeys.size;
