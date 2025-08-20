@@ -35,6 +35,21 @@ function readConfigFiles(folderPath) {
 }
 
 /**
+ * Extracts Java system properties (-Dkey=value) from a command string
+ */
+function extractSystemProperties(command) {
+  const regex = /-D([^=\s]+)=([^\s]+)/g;
+  const properties = {};
+  let match;
+  
+  while ((match = regex.exec(command)) !== null) {
+    properties[match[1]] = match[2];
+  }
+  
+  return properties;
+}
+
+/**
  * Extracts key mappings from env array
  */
 function getEnvMappings(envArray) {
@@ -189,6 +204,61 @@ function compareConfigs(path1, path2, path3) {
     console.log('✗ Entrypoints differ across environments:');
     Object.entries(entrypoints).forEach(([env, cmd]) => {
       console.log(`  ${env}: ${cmd || '(not defined)'}`);
+    });
+  }
+  
+  // Parse and compare Java system properties
+  console.log('\nJAVA SYSTEM PROPERTIES COMPARISON:');
+  console.log('-'.repeat(100));
+  
+  const systemProps = {
+    [pathNames.path1]: extractSystemProperties(configs.path1.entrypoint),
+    [pathNames.path2]: extractSystemProperties(configs.path2.entrypoint),
+    [pathNames.path3]: extractSystemProperties(configs.path3.entrypoint)
+  };
+  
+  // Get all unique property keys
+  const allPropKeys = new Set();
+  Object.values(systemProps).forEach(props => {
+    Object.keys(props).forEach(key => allPropKeys.add(key));
+  });
+  
+  // Sort the keys alphabetically
+  const sortedPropKeys = Array.from(allPropKeys).sort();
+  
+  if (sortedPropKeys.length === 0) {
+    console.log('  No Java system properties (-D arguments) found in any entrypoint');
+  } else {
+    // Create a comparison table for system properties
+    const propCol1 = 'Property'.padEnd(30);
+    const propCol2 = pathNames.path1.padEnd(30);
+    const propCol3 = pathNames.path2.padEnd(30);
+    const propCol4 = pathNames.path3.padEnd(30);
+    const propCol5 = 'Match';
+    
+    console.log(`${propCol1} | ${propCol2} | ${propCol3} | ${propCol4} | ${propCol5}`);
+    console.log('-'.repeat(140));
+    
+    sortedPropKeys.forEach(propKey => {
+      const v1 = systemProps[pathNames.path1][propKey] || '(not set)';
+      const v2 = systemProps[pathNames.path2][propKey] || '(not set)';
+      const v3 = systemProps[pathNames.path3][propKey] || '(not set)';
+      
+      const allMatch = v1 === v2 && v2 === v3 && v1 !== '(not set)';
+      const matchStatus = allMatch ? '✓' : '✗';
+      
+      // Format values for display
+      const formatPropValue = (val) => {
+        const str = String(val);
+        return str.length > 28 ? str.substring(0, 25) + '...' : str;
+      };
+      
+      const pc1 = propKey.padEnd(30);
+      const pc2 = formatPropValue(v1).padEnd(30);
+      const pc3 = formatPropValue(v2).padEnd(30);
+      const pc4 = formatPropValue(v3).padEnd(30);
+      
+      console.log(`${pc1} | ${pc2} | ${pc3} | ${pc4} | ${matchStatus}`);
     });
   }
   
